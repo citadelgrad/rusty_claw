@@ -29,6 +29,7 @@
 //!     .build();
 //! ```
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -45,7 +46,8 @@ pub enum SystemPrompt {
 }
 
 /// Permission mode for tool execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
     /// Default permission mode
     Default,
@@ -78,21 +80,21 @@ pub struct McpServerConfig {
 }
 
 /// SDK-managed MCP server (placeholder for future MCP tasks)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkMcpServer {
     // Detailed implementation in future tasks (SPEC.md section 7.2)
 }
 
 /// Hook event type (placeholder for future hook tasks)
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HookEvent;
 
 /// Hook matcher (placeholder for future hook tasks)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookMatcher;
 
 /// Agent definition for subagents (placeholder for future agent tasks)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentDefinition {
     /// Agent description
     pub description: String,

@@ -1,546 +1,872 @@
-# Investigation: rusty_claw-dss - Implement ClaudeAgentOptions builder
+# Investigation: rusty_claw-91n - Implement Control Protocol handler
 
-**Task ID:** rusty_claw-dss
+## Task Summary
+
+**ID:** rusty_claw-91n
+**Title:** Implement Control Protocol handler
+**Priority:** P1 (Critical)
 **Status:** in_progress
-**Priority:** P2 (Medium)
-
-## Summary
-
-Implement `ClaudeAgentOptions` struct with builder pattern to provide flexible configuration for Claude agent sessions. This is a foundational configuration type that will enable downstream Control Protocol handler implementation (rusty_claw-91n).
-
-## Current State
-
-### ✅ Completed Dependencies
-- **rusty_claw-pwc**: All shared types and message structs are complete
-  - `Message`, `SystemMessage`, `AssistantMessage`, `ResultMessage` defined
-  - `ContentBlock`, `ToolInfo`, `McpServerInfo`, `UsageInfo` defined
-  - Message deserialization working correctly
-
-### 📂 Existing Files
-- `crates/rusty_claw/src/lib.rs` - Public API with module structure
-- `crates/rusty_claw/src/messages.rs` - Complete message type definitions (627 lines)
-- `crates/rusty_claw/src/query.rs` - Uses `Option<()>` as placeholder for options (line 116)
-- `crates/rusty_claw/src/transport/mod.rs` - Transport trait definition
-- `crates/rusty_claw/src/transport/subprocess.rs` - SubprocessCLITransport implementation
-- `crates/rusty_claw/src/error.rs` - ClawError type hierarchy
-
-### ❌ Missing Files
-- `crates/rusty_claw/src/options.rs` - **NEW FILE NEEDED**
-
-### 📋 Specification Reference
-- **SPEC.md Section 5.1**: ClaudeAgentOptions definition (lines 363-446)
-- **SPEC.md Section 2.2**: SubprocessCLITransport CLI arguments (lines 139-151)
-- **SPEC.md Section 4.3**: Control Protocol initialization fields (lines 332-338)
-
-## What Needs to Be Done
-
-### 1. Create `crates/rusty_claw/src/options.rs` (NEW FILE, ~400 lines)
-
-Implement the following types:
-
-#### Core Options Struct
-```rust
-#[derive(Debug, Clone, Default)]
-pub struct ClaudeAgentOptions {
-    // Prompt & behavior
-    pub system_prompt: Option<SystemPrompt>,
-    pub append_system_prompt: Option<String>,
-    pub max_turns: Option<u32>,
-    pub model: Option<String>,
-
-    // Tools & permissions
-    pub allowed_tools: Vec<String>,
-    pub disallowed_tools: Vec<String>,
-    pub permission_mode: Option<PermissionMode>,
-    pub permission_prompt_tool_allowlist: Vec<String>,
-
-    // MCP (placeholder for future tasks)
-    pub mcp_servers: HashMap<String, McpServerConfig>,
-    pub sdk_mcp_servers: Vec<SdkMcpServer>,
-
-    // Hooks (placeholder for future tasks)
-    pub hooks: HashMap<HookEvent, Vec<HookMatcher>>,
-
-    // Subagents (placeholder for future tasks)
-    pub agents: HashMap<String, AgentDefinition>,
-
-    // Session
-    pub resume: Option<String>,
-    pub fork_session: bool,
-    pub session_name: Option<String>,
-    pub enable_file_checkpointing: bool,
-
-    // Environment
-    pub cwd: Option<PathBuf>,
-    pub cli_path: Option<PathBuf>,
-    pub env: HashMap<String, String>,
-
-    // Settings isolation
-    pub settings_sources: Option<Vec<String>>,
-
-    // Output
-    pub output_format: Option<serde_json::Value>,
-    pub include_partial_messages: bool,
-
-    // Advanced
-    pub betas: Vec<String>,
-    pub sandbox_settings: Option<SandboxSettings>,
-}
-```
-
-#### Supporting Enums
-```rust
-pub enum SystemPrompt {
-    Custom(String),
-    Preset { preset: String },
-}
-
-pub enum PermissionMode {
-    Default,
-    AcceptEdits,
-    BypassPermissions,
-    Plan,
-}
-```
-
-#### Placeholder Structs (for future tasks)
-```rust
-// Will be fully implemented in future MCP tasks
-pub struct McpServerConfig {
-    // Placeholder - detailed in SPEC.md section 7.1
-}
-
-pub struct SdkMcpServer {
-    // Placeholder - detailed in SPEC.md section 7.2
-}
-
-// Will be fully implemented in future hook tasks
-pub struct HookEvent;
-pub struct HookMatcher;
-
-// Will be fully implemented in future agent tasks
-pub struct AgentDefinition {
-    pub description: String,
-    pub prompt: String,
-    pub tools: Vec<String>,
-    pub model: Option<String>,
-}
-
-// Will be fully implemented in future sandbox tasks
-pub struct SandboxSettings;
-```
-
-#### Builder Implementation
-```rust
-pub struct ClaudeAgentOptionsBuilder {
-    inner: ClaudeAgentOptions,
-}
-
-impl ClaudeAgentOptions {
-    pub fn builder() -> ClaudeAgentOptionsBuilder {
-        ClaudeAgentOptionsBuilder::default()
-    }
-}
-
-impl ClaudeAgentOptionsBuilder {
-    // Chainable setters for all fields
-    pub fn system_prompt(mut self, prompt: SystemPrompt) -> Self { ... }
-    pub fn max_turns(mut self, turns: u32) -> Self { ... }
-    pub fn model(mut self, model: impl Into<String>) -> Self { ... }
-    pub fn allowed_tools(mut self, tools: Vec<String>) -> Self { ... }
-    pub fn permission_mode(mut self, mode: PermissionMode) -> Self { ... }
-    pub fn cwd(mut self, path: impl Into<PathBuf>) -> Self { ... }
-    // ... (all other fields)
-
-    pub fn build(self) -> ClaudeAgentOptions { ... }
-}
-```
-
-#### CLI Arguments Conversion
-```rust
-impl ClaudeAgentOptions {
-    /// Convert options to Claude CLI arguments
-    pub fn to_cli_args(&self, prompt: &str) -> Vec<String> {
-        let mut args = vec![
-            "--output-format=stream-json".to_string(),
-            "--verbose".to_string(),
-        ];
-
-        if let Some(max_turns) = self.max_turns {
-            args.push(format!("--max-turns={}", max_turns));
-        }
-
-        if let Some(model) = &self.model {
-            args.push(format!("--model={}", model));
-        }
-
-        if let Some(mode) = &self.permission_mode {
-            args.push(format!("--permission-mode={}", mode.to_cli_arg()));
-        }
-
-        // Settings isolation for reproducibility
-        args.push("--settings-sources=".to_string());
-
-        // Enable control protocol input
-        args.push("--input-format=stream-json".to_string());
-
-        // Prompt
-        args.push("-p".to_string());
-        args.push(prompt.to_string());
-
-        args
-    }
-}
-```
-
-### 2. Modify `crates/rusty_claw/src/lib.rs` (+2 lines)
-
-Add options module:
-```rust
-/// Configuration options and builder
-pub mod options;
-```
-
-Update prelude:
-```rust
-pub use crate::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
-```
-
-### 3. Modify `crates/rusty_claw/src/query.rs` (~10 lines changed)
-
-Update function signature and implementation:
-```rust
-// Line 116: Change signature
-pub async fn query(
-    prompt: impl Into<String>,
-    options: Option<ClaudeAgentOptions>,
-) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
-    let prompt = prompt.into();
-
-    // Extract CLI args from options or use defaults
-    let args = if let Some(opts) = options {
-        opts.to_cli_args(&prompt)
-    } else {
-        vec![
-            "--output-format=stream-json".to_string(),
-            "--verbose".to_string(),
-            "-p".to_string(),
-            prompt,
-        ]
-    };
-
-    // ... rest of function unchanged
-}
-```
-
-### 4. Add Tests in `crates/rusty_claw/src/options.rs` (~150 lines)
-
-#### Unit Tests:
-- ✅ Builder pattern usage
-- ✅ Default values
-- ✅ Field setters (chaining)
-- ✅ CLI args conversion for all fields
-- ✅ PermissionMode enum variants
-- ✅ SystemPrompt enum variants
-- ✅ Empty options produces minimal CLI args
-- ✅ Complex options with all fields set
-
-Example test structure:
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_builder_default() {
-        let opts = ClaudeAgentOptions::builder().build();
-        assert_eq!(opts.max_turns, None);
-        assert_eq!(opts.model, None);
-        assert!(opts.allowed_tools.is_empty());
-    }
-
-    #[test]
-    fn test_builder_chaining() {
-        let opts = ClaudeAgentOptions::builder()
-            .max_turns(5)
-            .model("claude-sonnet-4")
-            .allowed_tools(vec!["Read".to_string(), "Bash".to_string()])
-            .permission_mode(PermissionMode::AcceptEdits)
-            .build();
-
-        assert_eq!(opts.max_turns, Some(5));
-        assert_eq!(opts.model, Some("claude-sonnet-4".to_string()));
-        assert_eq!(opts.allowed_tools.len(), 2);
-    }
-
-    #[test]
-    fn test_to_cli_args_minimal() {
-        let opts = ClaudeAgentOptions::default();
-        let args = opts.to_cli_args("test prompt");
-
-        assert!(args.contains(&"--output-format=stream-json".to_string()));
-        assert!(args.contains(&"--verbose".to_string()));
-        assert!(args.contains(&"--input-format=stream-json".to_string()));
-        assert!(args.contains(&"--settings-sources=".to_string()));
-        assert!(args.contains(&"-p".to_string()));
-        assert!(args.contains(&"test prompt".to_string()));
-    }
-
-    #[test]
-    fn test_to_cli_args_all_fields() {
-        let opts = ClaudeAgentOptions::builder()
-            .max_turns(10)
-            .model("claude-opus-4")
-            .permission_mode(PermissionMode::Plan)
-            .build();
-
-        let args = opts.to_cli_args("test");
-
-        assert!(args.contains(&"--max-turns=10".to_string()));
-        assert!(args.contains(&"--model=claude-opus-4".to_string()));
-        assert!(args.contains(&"--permission-mode=plan".to_string()));
-    }
-
-    #[test]
-    fn test_permission_mode_to_cli_arg() {
-        assert_eq!(PermissionMode::Default.to_cli_arg(), "default");
-        assert_eq!(PermissionMode::AcceptEdits.to_cli_arg(), "accept-edits");
-        assert_eq!(PermissionMode::BypassPermissions.to_cli_arg(), "bypass-permissions");
-        assert_eq!(PermissionMode::Plan.to_cli_arg(), "plan");
-    }
-}
-```
-
-### 5. Add Documentation (~50 lines)
-
-Add module-level documentation with examples:
-```rust
-//! Configuration options and builder pattern for Claude agent sessions
-//!
-//! This module provides [`ClaudeAgentOptions`] for configuring Claude agent behavior,
-//! including prompt settings, tools, permissions, session management, and environment.
-//!
-//! # Example
-//!
-//! ```
-//! use rusty_claw::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
-//!
-//! let options = ClaudeAgentOptions::builder()
-//!     .allowed_tools(vec!["Read".to_string(), "Bash".to_string()])
-//!     .permission_mode(PermissionMode::AcceptEdits)
-//!     .max_turns(5)
-//!     .model("claude-sonnet-4")
-//!     .build();
-//! ```
-//!
-//! # Builder Pattern
-//!
-//! All fields have sensible defaults. Use the builder pattern for convenient configuration:
-//!
-//! ```
-//! let options = ClaudeAgentOptions::builder()
-//!     .system_prompt(SystemPrompt::Custom("You are a helpful assistant".to_string()))
-//!     .max_turns(10)
-//!     .build();
-//! ```
-```
-
-## Design Decisions
-
-### 1. **Builder Pattern**
-- **Choice:** Hand-rolled builder instead of `derive_builder` crate
-- **Rationale:**
-  - Zero additional dependencies (aligns with SPEC.md section 11.1 "Minimal surface")
-  - Simple to implement (~100 lines)
-  - Full control over builder API
-  - No proc macro compile time cost
-
-### 2. **Placeholder Types**
-- **Choice:** Create minimal placeholder structs for MCP, hooks, agents
-- **Rationale:**
-  - Enables complete ClaudeAgentOptions API surface now
-  - Downstream tasks will flesh out these types
-  - Prevents breaking API changes later
-  - Follows SPEC.md structure
-
-### 3. **CLI Arguments Conversion**
-- **Choice:** Implement `to_cli_args()` method on ClaudeAgentOptions
-- **Rationale:**
-  - Central place for CLI argument logic
-  - Used by `query()` function now
-  - Will be used by `ClaudeClient` in future tasks
-  - Follows SPEC.md section 2.2 CLI argument spec
-
-### 4. **Default Values**
-- **Choice:** Use `Default` trait with `None` for optional fields, empty collections
-- **Rationale:**
-  - Sensible defaults for all fields
-  - Follows Rust conventions
-  - Enables partial configuration
-  - No required fields (except prompt in query())
-
-### 5. **Permission Mode Naming**
-- **Choice:** Use Rust enum names: `Default`, `AcceptEdits`, `BypassPermissions`, `Plan`
-- **Rationale:**
-  - Follows Rust naming conventions (PascalCase)
-  - Implements `to_cli_arg()` for snake-case conversion
-  - Matches SPEC.md section 5.1 definition
-
-## File Changes Summary
-
-### New Files (1):
-1. `crates/rusty_claw/src/options.rs` (~400 lines)
-   - ClaudeAgentOptions struct
-   - ClaudeAgentOptionsBuilder
-   - Supporting enums and placeholder types
-   - CLI args conversion
-   - Comprehensive tests
-
-### Modified Files (2):
-1. `crates/rusty_claw/src/lib.rs` (+4 lines)
-   - Add `pub mod options;`
+
+**Description:** Implement ControlProtocol struct with request/response routing, pending request tracking via oneshot channels, handler registration for can_use_tool/hook_callbacks/mcp_message, and the initialization handshake sequence.
+
+**Dependencies (All Completed ✓):**
+- ✓ rusty_claw-6cn: Implement Transport trait and SubprocessCLITransport [P1]
+- ✓ rusty_claw-dss: Implement ClaudeAgentOptions builder [P2]
+
+**Blocks (Downstream Tasks):**
+- ○ rusty_claw-bip: Implement Hook system [P2]
+- ○ rusty_claw-qrl: Implement ClaudeClient for interactive sessions [P2]
+- ○ rusty_claw-tlh: Implement SDK MCP Server bridge [P2]
+
+## Current State Analysis
+
+### What Exists
+
+**1. Transport Layer (✓ Complete)**
+- `src/transport/mod.rs` - Transport trait with async interface
+- `src/transport/subprocess.rs` - SubprocessCLITransport implementation
+- `src/transport/discovery.rs` - CLI discovery and version check
+- Full bidirectional NDJSON communication over stdio
+- Message receiver via `messages()` returning `UnboundedReceiver<Result<Value, ClawError>>`
+
+**2. Message Types (✓ Partial)**
+- `src/messages.rs` - Core message types:
+  - `Message` enum (System, Assistant, User, Result)
+  - `SystemMessage` enum (Init, CompactBoundary)
+  - `AssistantMessage`, `UserMessage`, `ResultMessage`
+  - `ContentBlock` enum (Text, ToolUse, ToolResult, Thinking)
+- ❌ **Missing:** Control protocol message types (`ControlRequest`, `ControlResponse`)
+
+**3. Error Types (✓ Complete)**
+- `src/error.rs` - ClawError enum with variants:
+  - `CliNotFound`, `InvalidCliVersion`, `Connection`, `Process`
+  - `JsonDecode`, `MessageParse`, `ControlTimeout`, `ControlError`
+  - `Io`, `ToolExecution`
+- All error types needed for control protocol already exist
+
+**4. Options (✓ Complete)**
+- `src/options.rs` - ClaudeAgentOptions with builder pattern
+  - System prompt, max_turns, model, tools, permissions
+  - MCP servers, hooks, agents (placeholder types)
+  - Session, environment, output settings
+  - `to_cli_args()` method for CLI argument conversion
+
+**5. Control Module (❌ Missing)**
+- `src/lib.rs` declares `pub mod control` as empty placeholder
+- ❌ **No implementation files exist**
+
+### What's Missing
+
+**Critical Missing Files:**
+
+1. **`src/control/mod.rs`** (NEW FILE, ~200 lines)
+   - `ControlProtocol` struct
+   - Core request/response routing
+   - Module structure and re-exports
+
+2. **`src/control/messages.rs`** (NEW FILE, ~300 lines)
+   - `ControlRequest` enum (outgoing: initialize, interrupt, set_permission_mode, etc.)
+   - `ControlResponse` enum (success, error responses)
+   - `IncomingControlRequest` enum (incoming: can_use_tool, hook_callback, mcp_message)
+   - Serde serialization/deserialization
+
+3. **`src/control/handlers.rs`** (NEW FILE, ~150 lines)
+   - `ControlHandlers` struct
+   - Handler traits: `CanUseToolHandler`, `HookHandler`, `McpMessageHandler`
+   - Handler registration system
+
+4. **`src/control/pending.rs`** (NEW FILE, ~100 lines)
+   - Pending request tracking with oneshot channels
+   - Request ID generation (UUID)
+   - Timeout handling
+
+**Minor Missing Pieces:**
+
+5. **`src/messages.rs`** (MODIFY, +30 lines)
+   - Add `ControlRequest` and `ControlResponse` variants to `Message` enum
+   - Update parsing logic
+
+6. **`src/lib.rs`** (MODIFY, +5 lines)
+   - Replace empty `control` module with `pub mod control;`
    - Update prelude exports
 
-2. `crates/rusty_claw/src/query.rs` (~10 lines changed)
-   - Change `options` parameter from `Option<()>` to `Option<ClaudeAgentOptions>`
-   - Use `options.to_cli_args()` instead of hardcoded args
+## Design Analysis
 
-## Risk Analysis
+### Architecture Overview (from SPEC.md Section 4)
 
-### 🟢 Low Risk Areas
-1. **Pure Additive Changes**: New module, no modifications to existing types
-2. **Default Trait**: All optional fields, backward compatible
-3. **Builder Pattern**: Standard Rust idiom, well-tested pattern
-4. **Existing Tests**: No impact on existing 29 passing tests
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      ControlProtocol                        │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │               Request/Response Router                │  │
+│  │  - request() sends and awaits response              │  │
+│  │  - handle_incoming() routes to handlers             │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                          ↕                                  │
+│  ┌──────────────────────┐      ┌─────────────────────┐   │
+│  │  Pending Requests     │      │   Handlers          │   │
+│  │  HashMap<String,      │      │   CanUseTool        │   │
+│  │    oneshot::Sender>   │      │   HookCallbacks     │   │
+│  │                       │      │   McpMessage        │   │
+│  └──────────────────────┘      └─────────────────────┘   │
+│                          ↕                                  │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │              Transport (Arc<dyn Transport>)         │  │
+│  │  - write() sends messages to CLI stdin             │  │
+│  │  - messages() receives from CLI stdout             │  │
+│  └─────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### 🟡 Medium Risk Areas
-1. **Placeholder Types**: Future tasks must implement full types
-   - **Mitigation**: Document clearly which fields are placeholders
-   - **Mitigation**: Use Rust visibility (`pub(crate)` initially) for unstable types
+### Key Design Patterns
 
-2. **CLI Args Conversion**: Must match Claude CLI exactly
-   - **Mitigation**: Follow SPEC.md section 2.2 precisely
-   - **Mitigation**: Add comprehensive tests for all CLI args
-   - **Mitigation**: Test with real Claude CLI in integration tests
+**1. Request/Response Routing (SPEC.md 4.2)**
+- Outgoing: `request()` generates UUID, inserts oneshot sender, writes message
+- Incoming: Background task reads messages, routes `control_response` to pending sender
+- Timeout: 30-second default with `tokio::time::timeout`
 
-### 🔴 High Risk Areas
-None identified. This is a foundational configuration type with no side effects.
+**2. Pending Request Tracking**
+```rust
+pending: Arc<Mutex<HashMap<String, oneshot::Sender<ControlResponse>>>>
+```
+- Key: request_id (UUID string)
+- Value: oneshot sender for response
+- Cleanup: Sender dropped on timeout or error
 
-## Dependencies & Blockers
+**3. Handler Registration**
+```rust
+struct ControlHandlers {
+    can_use_tool: Option<Box<dyn CanUseToolHandler>>,
+    hook_callbacks: HashMap<String, Box<dyn HookHandler>>,
+    mcp_message: Option<Box<dyn McpMessageHandler>>,
+}
+```
+- Dynamic registration via `register_*()` methods
+- Async trait handlers for extensibility
+- Option/HashMap for optional handlers
 
-### ✅ Satisfied Dependencies
-- **rusty_claw-pwc**: Complete (all message types defined)
-- **Cargo dependencies**: All required crates available (serde, serde_json, std collections)
+**4. Initialization Handshake (SPEC.md 4.4)**
+```
+1. SDK spawns CLI with --input-format=stream-json
+2. SDK sends: control_request { subtype: "initialize", hooks: {...}, agents: {...}, ... }
+3. CLI responds: control_response { subtype: "success", ... }
+4. CLI sends: system message { subtype: "init", session_id: "...", tools: [...] }
+5. SDK sends prompt via stdin (or control_request for client mode)
+6. CLI begins processing and streaming messages back
+```
 
-### ⚠️ Blocks Downstream Tasks
-- **rusty_claw-91n** [P1]: Implement Control Protocol handler
-  - Requires ClaudeAgentOptions for initialization
-  - Uses `hooks`, `agents`, `sdk_mcp_servers` fields
+### Message Flow
+
+**Outgoing Request (SDK → CLI):**
+```rust
+pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError> {
+    let id = Uuid::new_v4().to_string();
+    let (tx, rx) = oneshot::channel();
+    self.pending.lock().await.insert(id.clone(), tx);
+
+    let msg = json!({
+        "type": "control_request",
+        "request_id": id,
+        "request": request,
+    });
+    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
+
+    let response = tokio::time::timeout(Duration::from_secs(30), rx).await??;
+    Ok(response)
+}
+```
+
+**Incoming Request (CLI → SDK):**
+```rust
+pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest) {
+    let response = match request {
+        IncomingControlRequest::CanUseTool { tool_name, tool_input } => {
+            if let Some(handler) = &self.handlers.lock().await.can_use_tool {
+                handler.can_use_tool(&tool_name, &tool_input).await
+            } else {
+                // Default: allow all tools
+                Ok(ControlResponse::Success { ... })
+            }
+        }
+        // ... other handlers
+    };
+
+    let msg = json!({
+        "type": "control_response",
+        "request_id": request_id,
+        "response": response,
+    });
+    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
+}
+```
+
+## Implementation Plan
+
+### Phase 1: Control Message Types (~90 minutes)
+
+**File: `src/control/messages.rs`**
+
+1. **Outgoing Control Requests (SDK → CLI)**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum ControlRequest {
+    Initialize {
+        #[serde(skip_serializing_if = "HashMap::is_empty")]
+        hooks: HashMap<HookEvent, Vec<HookMatcher>>,
+        #[serde(skip_serializing_if = "HashMap::is_empty")]
+        agents: HashMap<String, AgentDefinition>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        sdk_mcp_servers: Vec<SdkMcpServer>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        permissions: Option<PermissionMode>,
+        can_use_tool: bool,
+    },
+    Interrupt,
+    SetPermissionMode { mode: String },
+    SetModel { model: String },
+    McpStatus,
+    RewindFiles { message_id: String },
+}
+```
+
+2. **Control Responses (CLI → SDK, SDK → CLI)**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum ControlResponse {
+    Success {
+        #[serde(flatten)]
+        data: serde_json::Value,
+    },
+    Error {
+        error: String,
+        #[serde(flatten)]
+        extra: serde_json::Value,
+    },
+}
+```
+
+3. **Incoming Control Requests (CLI → SDK)**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum IncomingControlRequest {
+    CanUseTool {
+        tool_name: String,
+        tool_input: serde_json::Value,
+    },
+    HookCallback {
+        hook_id: String,
+        hook_event: HookEvent,
+        hook_input: serde_json::Value,
+    },
+    McpMessage {
+        server_name: String,
+        message: serde_json::Value, // JSON-RPC
+    },
+}
+```
+
+**Tests:**
+- Serialization/deserialization for all message types
+- Round-trip tests (serialize → deserialize → compare)
+- Edge cases (empty fields, missing optionals)
+
+### Phase 2: Handler Traits and Registration (~60 minutes)
+
+**File: `src/control/handlers.rs`**
+
+1. **Handler Traits**
+```rust
+#[async_trait]
+pub trait CanUseToolHandler: Send + Sync {
+    async fn can_use_tool(
+        &self,
+        tool_name: &str,
+        tool_input: &serde_json::Value,
+    ) -> Result<bool, ClawError>;
+}
+
+#[async_trait]
+pub trait HookHandler: Send + Sync {
+    async fn call(
+        &self,
+        hook_event: HookEvent,
+        hook_input: serde_json::Value,
+    ) -> Result<serde_json::Value, ClawError>;
+}
+
+#[async_trait]
+pub trait McpMessageHandler: Send + Sync {
+    async fn handle(
+        &self,
+        server_name: &str,
+        message: serde_json::Value,
+    ) -> Result<serde_json::Value, ClawError>;
+}
+```
+
+2. **Handler Registry**
+```rust
+pub struct ControlHandlers {
+    can_use_tool: Option<Arc<dyn CanUseToolHandler>>,
+    hook_callbacks: HashMap<String, Arc<dyn HookHandler>>,
+    mcp_message: Option<Arc<dyn McpMessageHandler>>,
+}
+
+impl ControlHandlers {
+    pub fn new() -> Self { ... }
+    pub fn register_can_use_tool(&mut self, handler: Arc<dyn CanUseToolHandler>) { ... }
+    pub fn register_hook(&mut self, hook_id: String, handler: Arc<dyn HookHandler>) { ... }
+    pub fn register_mcp_message(&mut self, handler: Arc<dyn McpMessageHandler>) { ... }
+}
+```
+
+**Tests:**
+- Mock handlers for testing
+- Registration and retrieval
+- Multiple hook registration
+
+### Phase 3: Pending Request Tracking (~45 minutes)
+
+**File: `src/control/pending.rs`**
+
+1. **Pending Request Manager**
+```rust
+pub struct PendingRequests {
+    inner: Arc<Mutex<HashMap<String, oneshot::Sender<ControlResponse>>>>,
+}
+
+impl PendingRequests {
+    pub fn new() -> Self { ... }
+
+    pub async fn insert(&self, id: String, sender: oneshot::Sender<ControlResponse>) {
+        self.inner.lock().await.insert(id, sender);
+    }
+
+    pub async fn complete(&self, id: &str, response: ControlResponse) -> bool {
+        if let Some(sender) = self.inner.lock().await.remove(id) {
+            sender.send(response).is_ok()
+        } else {
+            false
+        }
+    }
+
+    pub async fn cancel(&self, id: &str) {
+        self.inner.lock().await.remove(id);
+    }
+}
+```
+
+**Tests:**
+- Insert and complete
+- Cancel (timeout simulation)
+- Multiple pending requests
+- Concurrent access
+
+### Phase 4: ControlProtocol Core (~90 minutes)
+
+**File: `src/control/mod.rs`**
+
+1. **Main Struct**
+```rust
+pub struct ControlProtocol {
+    transport: Arc<dyn Transport>,
+    pending: PendingRequests,
+    handlers: Arc<Mutex<ControlHandlers>>,
+}
+
+impl ControlProtocol {
+    pub fn new(transport: Arc<dyn Transport>) -> Self {
+        Self {
+            transport,
+            pending: PendingRequests::new(),
+            handlers: Arc::new(Mutex::new(ControlHandlers::new())),
+        }
+    }
+}
+```
+
+2. **Request Method (SDK → CLI)**
+```rust
+pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError> {
+    let id = Uuid::new_v4().to_string();
+    let (tx, rx) = oneshot::channel();
+    self.pending.insert(id.clone(), tx).await;
+
+    let msg = json!({
+        "type": "control_request",
+        "request_id": id,
+        "request": request,
+    });
+    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
+
+    match tokio::time::timeout(Duration::from_secs(30), rx).await {
+        Ok(Ok(response)) => Ok(response),
+        Ok(Err(_)) => Err(ClawError::ControlError("channel closed".to_string())),
+        Err(_) => {
+            self.pending.cancel(&id).await;
+            Err(ClawError::ControlTimeout { subtype: "control_request".to_string() })
+        }
+    }
+}
+```
+
+3. **Response Handler (CLI → SDK)**
+```rust
+pub async fn handle_response(&self, request_id: &str, response: ControlResponse) {
+    self.pending.complete(request_id, response).await;
+}
+```
+
+4. **Incoming Request Handler (CLI → SDK)**
+```rust
+pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest) {
+    let response = match request {
+        IncomingControlRequest::CanUseTool { tool_name, tool_input } => {
+            let handlers = self.handlers.lock().await;
+            if let Some(handler) = &handlers.can_use_tool {
+                match handler.can_use_tool(&tool_name, &tool_input).await {
+                    Ok(allowed) => ControlResponse::Success {
+                        data: json!({ "allowed": allowed }),
+                    },
+                    Err(e) => ControlResponse::Error {
+                        error: e.to_string(),
+                        extra: json!({}),
+                    },
+                }
+            } else {
+                // Default: allow all tools
+                ControlResponse::Success {
+                    data: json!({ "allowed": true }),
+                }
+            }
+        }
+        IncomingControlRequest::HookCallback { hook_id, hook_event, hook_input } => {
+            let handlers = self.handlers.lock().await;
+            if let Some(handler) = handlers.hook_callbacks.get(&hook_id) {
+                match handler.call(hook_event, hook_input).await {
+                    Ok(result) => ControlResponse::Success { data: result },
+                    Err(e) => ControlResponse::Error {
+                        error: e.to_string(),
+                        extra: json!({}),
+                    },
+                }
+            } else {
+                ControlResponse::Error {
+                    error: format!("No handler for hook_id: {}", hook_id),
+                    extra: json!({}),
+                }
+            }
+        }
+        IncomingControlRequest::McpMessage { server_name, message } => {
+            let handlers = self.handlers.lock().await;
+            if let Some(handler) = &handlers.mcp_message {
+                match handler.handle(&server_name, message).await {
+                    Ok(result) => ControlResponse::Success { data: result },
+                    Err(e) => ControlResponse::Error {
+                        error: e.to_string(),
+                        extra: json!({}),
+                    },
+                }
+            } else {
+                ControlResponse::Error {
+                    error: format!("No MCP message handler registered"),
+                    extra: json!({}),
+                }
+            }
+        }
+    };
+
+    let msg = json!({
+        "type": "control_response",
+        "request_id": request_id,
+        "response": response,
+    });
+    if let Err(e) = self.transport.write(serde_json::to_vec(&msg).unwrap().as_slice()).await {
+        eprintln!("Failed to send control response: {}", e);
+    }
+}
+```
+
+**Tests:**
+- Request/response round-trip with mock transport
+- Timeout handling
+- Concurrent requests
+- Handler dispatch
+
+### Phase 5: Initialization Handshake (~60 minutes)
+
+**File: `src/control/mod.rs` (additions)**
+
+```rust
+impl ControlProtocol {
+    pub async fn initialize(&self, options: &ClaudeAgentOptions) -> Result<(), ClawError> {
+        let request = ControlRequest::Initialize {
+            hooks: options.hooks.clone(),
+            agents: options.agents.clone(),
+            sdk_mcp_servers: options.sdk_mcp_servers.clone(),
+            permissions: options.permission_mode.clone(),
+            can_use_tool: true, // Enable can_use_tool callbacks
+        };
+
+        match self.request(request).await? {
+            ControlResponse::Success { .. } => Ok(()),
+            ControlResponse::Error { error, .. } => {
+                Err(ClawError::ControlError(format!("Initialization failed: {}", error)))
+            }
+        }
+    }
+}
+```
+
+**Tests:**
+- Successful initialization
+- Initialization failure handling
+- Options conversion
+
+### Phase 6: Message Integration (~45 minutes)
+
+**File: `src/messages.rs` (modifications)**
+
+1. **Add Control Message Variants**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Message {
+    System(SystemMessage),
+    Assistant(AssistantMessage),
+    User(UserMessage),
+    Result(ResultMessage),
+    ControlRequest {
+        request_id: String,
+        #[serde(flatten)]
+        request: ControlRequest,
+    },
+    ControlResponse {
+        request_id: String,
+        #[serde(flatten)]
+        response: ControlResponse,
+    },
+}
+```
+
+**Tests:**
+- Parsing control_request and control_response messages
+- Round-trip serialization
+
+### Phase 7: Integration Tests (~60 minutes)
+
+**File: `src/control/tests.rs`**
+
+1. **Mock Transport**
+```rust
+struct MockTransport {
+    sent: Arc<Mutex<Vec<String>>>,
+    receiver: Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>,
+    sender: mpsc::UnboundedSender<Result<Value, ClawError>>,
+}
+```
+
+2. **Full Flow Tests**
+- Initialize handshake
+- Request/response with mock CLI
+- Incoming request handling
+- Error scenarios (timeout, parse error, handler error)
+- Concurrent request handling
+
+### Phase 8: Documentation & Polish (~30 minutes)
+
+1. **Module Documentation**
+   - Overview and architecture
+   - Usage examples
+   - Handler registration examples
+
+2. **Public API Documentation**
+   - All public methods
+   - Error conditions
+   - Thread safety guarantees
+
+## Files to Modify/Create
+
+### New Files (4 files, ~750 lines total)
+
+1. **`src/control/mod.rs`** (~200 lines)
+   - ControlProtocol struct
+   - request(), handle_response(), handle_incoming() methods
+   - initialize() handshake method
+   - Module structure and re-exports
+
+2. **`src/control/messages.rs`** (~300 lines)
+   - ControlRequest enum (6 variants)
+   - ControlResponse enum (2 variants)
+   - IncomingControlRequest enum (3 variants)
+   - Serde implementations
+   - Tests (~100 lines)
+
+3. **`src/control/handlers.rs`** (~150 lines)
+   - CanUseToolHandler trait
+   - HookHandler trait
+   - McpMessageHandler trait
+   - ControlHandlers registry struct
+   - Tests (~50 lines)
+
+4. **`src/control/pending.rs`** (~100 lines)
+   - PendingRequests struct
+   - insert(), complete(), cancel() methods
+   - Tests (~30 lines)
+
+### Modified Files (3 files, ~50 lines changed)
+
+5. **`src/lib.rs`** (~5 lines changed)
+   - Replace empty `control` module with `pub mod control;`
+   - Update prelude exports:
+     ```rust
+     pub use crate::control::{ControlProtocol, ControlRequest, ControlResponse};
+     ```
+
+6. **`src/messages.rs`** (~30 lines changed)
+   - Add ControlRequest and ControlResponse variants to Message enum
+   - Update parsing and serialization tests
+
+7. **`Cargo.toml`** (~15 lines changed)
+   - Add dependencies:
+     - `uuid = { version = "1.11", features = ["v4", "serde"] }`
+     - (other dependencies already present: tokio, serde, serde_json, async-trait)
+
+## Dependencies
+
+### New Dependencies Required
+
+```toml
+[dependencies]
+uuid = { version = "1.11", features = ["v4", "serde"] }
+```
+
+### Existing Dependencies (Already Available)
+
+- `tokio` - async runtime, channels (oneshot, mpsc)
+- `serde` / `serde_json` - serialization
+- `async-trait` - async trait support
+- `thiserror` - error handling
+
+## Risks & Mitigations
+
+### 🟢 Low Risk
+
+1. **Message Serialization**
+   - Risk: JSON format mismatch with CLI
+   - Mitigation: Comprehensive unit tests, follow SPEC.md exactly
+   - Testing: Round-trip ser/de tests for all message types
+
+2. **Handler Traits**
+   - Risk: Trait design too rigid or too flexible
+   - Mitigation: Follow Python SDK patterns, async-trait for flexibility
+   - Testing: Mock handlers in tests
+
+### 🟡 Medium Risk
+
+1. **Pending Request Cleanup**
+   - Risk: Memory leak from abandoned requests
+   - Mitigation: Timeout removes pending entry, explicit cancel on drop
+   - Testing: Timeout tests, concurrent request tests
+
+2. **Handler Dispatch Errors**
+   - Risk: Unhandled errors crash process
+   - Mitigation: Catch all errors, return ControlResponse::Error
+   - Testing: Error propagation tests
+
+3. **Concurrency Issues**
+   - Risk: Race conditions in pending/handlers maps
+   - Mitigation: Arc<Mutex<...>> for all shared state
+   - Testing: Concurrent access tests with tokio::spawn
+
+### 🔴 High Risk
+
+1. **Initialization Handshake Timing**
+   - Risk: Race between initialize request and system init message
+   - Mitigation: Wait for ControlResponse::Success before proceeding
+   - Testing: Integration tests with mock transport, sequence verification
+
+2. **Backward Compatibility**
+   - Risk: Breaking changes to Message enum affect existing code
+   - Mitigation: Add variants, don't modify existing ones
+   - Testing: All 73 existing tests must pass
 
 ## Testing Strategy
 
-### Unit Tests (in options.rs)
-1. ✅ Builder default values
-2. ✅ Builder chaining
-3. ✅ All field setters
-4. ✅ CLI args conversion (minimal options)
-5. ✅ CLI args conversion (all fields)
-6. ✅ PermissionMode enum to CLI arg conversion
-7. ✅ SystemPrompt enum variants
-8. ✅ Collections (Vec, HashMap) handling
-9. ✅ PathBuf conversion
-10. ✅ Optional fields handling
+### Unit Tests (~200 lines)
 
-### Integration Tests (future)
-- Test with real Claude CLI (verify CLI args work correctly)
-- Test with mock CLI (verify options are passed through transport)
+**Messages (`control/messages.rs`):**
+- ✅ Serialize/deserialize ControlRequest variants
+- ✅ Serialize/deserialize ControlResponse variants
+- ✅ Serialize/deserialize IncomingControlRequest variants
+- ✅ Round-trip tests
+- ✅ Missing optional fields
 
-### Documentation Tests
-- Ensure all examples in module docs compile and run
+**Handlers (`control/handlers.rs`):**
+- ✅ Mock handler implementations
+- ✅ Handler registration
+- ✅ Multiple hooks registration
 
-## Success Criteria
+**Pending (`control/pending.rs`):**
+- ✅ Insert and complete
+- ✅ Cancel (timeout)
+- ✅ Concurrent access
 
-1. ✅ **ClaudeAgentOptions struct created** with all fields from SPEC.md section 5.1
-2. ✅ **Builder pattern implemented** with chainable setters
-3. ✅ **CLI args conversion** working for all fields
-4. ✅ **Supporting enums** (SystemPrompt, PermissionMode) implemented
-5. ✅ **Placeholder types** created for future tasks (MCP, hooks, agents)
-6. ✅ **query() function updated** to use ClaudeAgentOptions
-7. ✅ **Comprehensive tests** (10+ unit tests)
-8. ✅ **Zero clippy warnings** in options.rs
-9. ✅ **All existing tests pass** (no regressions)
-10. ✅ **Complete documentation** with examples
+### Integration Tests (~150 lines)
 
-## Implementation Phases
+**Control Protocol (`control/mod.rs`):**
+- ✅ Request/response with mock transport
+- ✅ Timeout handling
+- ✅ Concurrent requests
+- ✅ Handler dispatch (can_use_tool, hook, mcp)
+- ✅ Initialize handshake
 
-### Phase 1: Core Options Struct (~90 minutes)
-1. Create `options.rs` file
-2. Define `ClaudeAgentOptions` struct with all fields
-3. Implement `Default` trait
-4. Add supporting enums (SystemPrompt, PermissionMode)
-5. Create placeholder types (McpServerConfig, etc.)
-6. Write module-level documentation
+**Message Integration (`messages.rs`):**
+- ✅ Parse control_request from JSON
+- ✅ Parse control_response from JSON
+- ✅ No regressions in existing 73 tests
 
-### Phase 2: Builder Pattern (~60 minutes)
-1. Define `ClaudeAgentOptionsBuilder` struct
-2. Implement all setter methods (chainable)
-3. Implement `build()` method
-4. Add builder documentation and examples
+### Success Criteria
 
-### Phase 3: CLI Args Conversion (~45 minutes)
-1. Implement `to_cli_args()` method
-2. Handle all option fields correctly
-3. Follow SPEC.md section 2.2 CLI arguments
-4. Add helper methods (e.g., `PermissionMode::to_cli_arg()`)
+1. ✅ All 4 new files created with complete implementations
+2. ✅ All 3 modified files updated correctly
+3. ✅ ControlProtocol struct with request/response routing
+4. ✅ Pending request tracking with oneshot channels
+5. ✅ Handler traits and registration system
+6. ✅ Initialization handshake method
+7. ✅ Message enum updated with control variants
+8. ✅ All unit tests pass (new: ~20 tests)
+9. ✅ All integration tests pass (new: ~10 tests)
+10. ✅ All existing tests pass (73 tests)
+11. ✅ Zero clippy warnings in new code
+12. ✅ Complete module documentation
+13. ✅ No breaking changes to existing API
 
-### Phase 4: Integration (~30 minutes)
-1. Add `pub mod options;` to lib.rs
-2. Update prelude exports
-3. Modify `query()` function in query.rs
-4. Update query() function signature and docs
+## Downstream Impact
 
-### Phase 5: Testing (~90 minutes)
-1. Write builder tests
-2. Write CLI args tests
-3. Write enum conversion tests
-4. Write edge case tests
-5. Run full test suite
-6. Fix any clippy warnings
+**Unblocks 3 Critical Tasks:**
 
-### Phase 6: Documentation & Verification (~30 minutes)
-1. Write usage examples
-2. Add inline documentation
-3. Verify all doc tests compile
-4. Run final test suite
-5. Verify against acceptance criteria
+1. **rusty_claw-bip** [P2] - Implement Hook system
+   - Needs: `ControlHandlers`, `HookHandler` trait
+   - Can implement hook registration and callbacks
 
-**Total Estimated Effort:** ~5.5 hours
+2. **rusty_claw-qrl** [P2] - Implement ClaudeClient for interactive sessions
+   - Needs: `ControlProtocol`, `initialize()` method
+   - Can start interactive sessions with proper handshake
 
-## Unblocks
+3. **rusty_claw-tlh** [P2] - Implement SDK MCP Server bridge
+   - Needs: `McpMessageHandler` trait, message routing
+   - Can route JSON-RPC messages to SDK-hosted tools
 
-Completing this task will unblock:
-- **rusty_claw-91n** [P1]: Implement Control Protocol handler
-  - Needs ClaudeAgentOptions for control protocol initialization
-  - Uses hooks, agents, and sdk_mcp_servers configuration
+## Implementation Checklist
 
-## Next Steps
+### Phase 1: Control Message Types ✓
+- [ ] Create `src/control/messages.rs`
+- [ ] Implement ControlRequest enum with 6 variants
+- [ ] Implement ControlResponse enum with 2 variants
+- [ ] Implement IncomingControlRequest enum with 3 variants
+- [ ] Add serde derive macros with correct attributes
+- [ ] Write serialization unit tests (8 tests)
+- [ ] Write deserialization unit tests (8 tests)
+- [ ] Write round-trip tests (3 tests)
 
-1. ✅ Create `crates/rusty_claw/src/options.rs` (Phase 1)
-2. ✅ Implement builder pattern (Phase 2)
-3. ✅ Implement CLI args conversion (Phase 3)
-4. ✅ Integrate with lib.rs and query.rs (Phase 4)
-5. ✅ Add comprehensive tests (Phase 5)
-6. ✅ Document and verify (Phase 6)
+### Phase 2: Handler Traits ✓
+- [ ] Create `src/control/handlers.rs`
+- [ ] Implement CanUseToolHandler trait
+- [ ] Implement HookHandler trait
+- [ ] Implement McpMessageHandler trait
+- [ ] Implement ControlHandlers registry struct
+- [ ] Add registration methods (3 methods)
+- [ ] Write mock handler tests (5 tests)
 
-## References
+### Phase 3: Pending Request Tracking ✓
+- [ ] Create `src/control/pending.rs`
+- [ ] Implement PendingRequests struct
+- [ ] Implement insert() method
+- [ ] Implement complete() method
+- [ ] Implement cancel() method
+- [ ] Write unit tests (5 tests)
 
-- **SPEC.md Section 5.1**: ClaudeAgentOptions definition (lines 363-446)
-- **SPEC.md Section 2.2**: SubprocessCLITransport CLI arguments (lines 139-151)
-- **SPEC.md Section 4.3**: Control Protocol initialization (lines 332-338)
-- **SPEC.md Section 11.1**: Dependency Philosophy - "Minimal surface"
-- **Python SDK Reference**: `claude-agent-sdk-python` (MIT License)
+### Phase 4: ControlProtocol Core ✓
+- [ ] Create `src/control/mod.rs`
+- [ ] Implement ControlProtocol struct
+- [ ] Implement new() constructor
+- [ ] Implement request() method (SDK → CLI)
+- [ ] Implement handle_response() method (CLI → SDK)
+- [ ] Implement handle_incoming() method (CLI → SDK)
+- [ ] Add timeout handling (30 seconds)
+- [ ] Write integration tests (8 tests)
 
----
+### Phase 5: Initialization Handshake ✓
+- [ ] Implement initialize() method in ControlProtocol
+- [ ] Convert ClaudeAgentOptions to Initialize request
+- [ ] Handle success/error responses
+- [ ] Write initialization tests (3 tests)
 
-**Investigation Complete** ✅
-Ready to proceed with implementation!
+### Phase 6: Message Integration ✓
+- [ ] Modify `src/messages.rs`
+- [ ] Add ControlRequest variant to Message enum
+- [ ] Add ControlResponse variant to Message enum
+- [ ] Update parsing logic
+- [ ] Write integration tests (4 tests)
+- [ ] Verify all 73 existing tests pass
+
+### Phase 7: Integration Tests ✓
+- [ ] Create MockTransport for testing
+- [ ] Write full flow tests (5 tests)
+- [ ] Write error scenario tests (5 tests)
+- [ ] Write concurrent request tests (2 tests)
+
+### Phase 8: Documentation & Polish ✓
+- [ ] Write module-level documentation
+- [ ] Document all public methods
+- [ ] Add usage examples
+- [ ] Add architecture diagram
+- [ ] Run clippy and fix warnings
+- [ ] Run cargo fmt
+- [ ] Final test run (all ~103 tests)
+
+### Phase 9: Verification ✓
+- [ ] Cargo build succeeds
+- [ ] Cargo test succeeds (all ~103 tests)
+- [ ] Cargo clippy (0 warnings in new code)
+- [ ] Cargo doc builds successfully
+- [ ] Manual smoke test with mock transport
+- [ ] Update lib.rs prelude exports
+- [ ] Update Cargo.toml dependencies
+
+## Estimated Timeline
+
+- **Phase 1:** Control Message Types - 90 minutes
+- **Phase 2:** Handler Traits - 60 minutes
+- **Phase 3:** Pending Request Tracking - 45 minutes
+- **Phase 4:** ControlProtocol Core - 90 minutes
+- **Phase 5:** Initialization Handshake - 60 minutes
+- **Phase 6:** Message Integration - 45 minutes
+- **Phase 7:** Integration Tests - 60 minutes
+- **Phase 8:** Documentation & Polish - 30 minutes
+- **Phase 9:** Verification - 30 minutes
+
+**Total: ~510 minutes (~8.5 hours)**
+
+## Success Metrics
+
+1. **Code Coverage:** 100% of public API
+2. **Test Pass Rate:** 100% (new: ~30 tests, existing: 73 tests)
+3. **Clippy Warnings:** 0 in new code
+4. **Documentation:** Complete for all public items
+5. **Downstream Unblocked:** 3 P2 tasks ready to start
+
+## Notes
+
+- Follow SPEC.md section 4 exactly for message formats
+- Use Arc<Mutex<...>> for all shared mutable state
+- Handler errors should not panic - return ControlResponse::Error
+- Pending requests MUST be cleaned up on timeout
+- All trait handlers are async for maximum flexibility
+- Default behavior (no handler) should be permissive (allow tools, etc.)
+- The control protocol is critical path - comprehensive testing required

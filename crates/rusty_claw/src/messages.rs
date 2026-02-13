@@ -65,6 +65,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::control::messages::{ControlRequest, ControlResponse};
+
 /// Top-level message type discriminated by `type` field
 ///
 /// All messages from Claude Code CLI are wrapped in this enum.
@@ -80,6 +82,22 @@ pub enum Message {
     User(UserMessage),
     /// Final results (success, error, input required)
     Result(ResultMessage),
+    /// Control request (bidirectional: SDK ↔ CLI)
+    ControlRequest {
+        /// Unique request identifier
+        request_id: String,
+        /// Control request payload
+        #[serde(flatten)]
+        request: ControlRequest,
+    },
+    /// Control response (bidirectional: SDK ↔ CLI)
+    ControlResponse {
+        /// Request identifier this response corresponds to
+        request_id: String,
+        /// Control response payload
+        #[serde(flatten)]
+        response: ControlResponse,
+    },
 }
 
 /// System message variants discriminated by `subtype` field
@@ -929,7 +947,8 @@ mod tests {
             for (i, msg) in messages.iter().enumerate() {
                 match msg {
                     Message::System(_) | Message::Assistant(_) | Message::User(_)
-                    | Message::Result(_) => {}
+                    | Message::Result(_) | Message::ControlRequest { .. }
+                    | Message::ControlResponse { .. } => {}
                 }
                 // If we got here, the message is valid
                 let _ = i; // Use i to avoid unused warning

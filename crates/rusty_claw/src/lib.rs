@@ -44,9 +44,7 @@ pub use rusty_claw_macros::*;
 pub mod transport;
 
 /// Claude Control Protocol (CCP) implementation
-pub mod control {
-    //! Control protocol implementation will be added in future tasks
-}
+pub mod control;
 
 /// Model Context Protocol (MCP) integration
 pub mod mcp {
@@ -79,6 +77,9 @@ pub mod prelude {
     //!
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
+    pub use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
+    pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
+    pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
     pub use crate::messages::{
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,

@@ -1,31 +1,38 @@
-# Current Task: rusty_claw-dss
+# Current Task: rusty_claw-91n
 
 ## Task Information
-- **ID:** rusty_claw-dss
-- **Title:** Implement ClaudeAgentOptions builder
+- **ID:** rusty_claw-91n
+- **Title:** Implement Control Protocol handler
 - **Type:** task
-- **Priority:** P2 (Medium)
+- **Priority:** P1 (Critical)
 - **Status:** in_progress
 - **Owner:** Scott Nixon
 
 ## Description
-Implement ClaudeAgentOptions struct with builder pattern covering system_prompt, max_turns, model, allowed_tools, permission_mode, mcp_servers, hooks, agents, session, environment, and output settings.
+Implement ControlProtocol struct with request/response routing, pending request tracking via oneshot channels, handler registration for can_use_tool/hook_callbacks/mcp_message, and the initialization handshake sequence.
 
-## Dependencies
-- ✓ **COMPLETED:** rusty_claw-pwc - Define shared types and message structs [P1]
+## Dependencies (All Completed ✓)
+- ✓ rusty_claw-6cn: Implement Transport trait and SubprocessCLITransport [P1]
+- ✓ rusty_claw-dss: Implement ClaudeAgentOptions builder [P2]
 
-## Blocks
-- ○ **BLOCKED BY THIS TASK:** rusty_claw-91n - Implement Control Protocol handler [P1]
+## Blocks (Downstream Tasks)
+- ○ rusty_claw-bip: Implement Hook system [P2]
+- ○ rusty_claw-qrl: Implement ClaudeClient for interactive sessions [P2]
+- ○ rusty_claw-tlh: Implement SDK MCP Server bridge [P2]
 
 ## Key Points
-- Implement builder pattern for flexible configuration
-- Cover all configuration options: system_prompt, max_turns, model, allowed_tools, permission_mode, mcp_servers, hooks, agents, session, environment, and output settings
-- Enable downstream Control Protocol handler implementation
-- Production-ready builder with sensible defaults
+- Implement ControlProtocol struct with request/response routing
+- Use oneshot channels for pending request tracking
+- Register handlers for can_use_tool, hook_callbacks, and mcp_message events
+- Implement initialization handshake sequence
+- Production-ready with comprehensive tests
 
 ## Next Steps
-1. Review existing types from rusty_claw-pwc
-2. Design ClaudeAgentOptions struct with all required fields
-3. Implement builder pattern
-4. Add comprehensive tests
-5. Document usage examples
+1. Review Transport layer implementation (rusty_claw-6cn)
+2. Review message types and specs (SPEC.md sections 3-5)
+3. Design ControlProtocol struct with async handler system
+4. Implement request/response routing
+5. Implement oneshot channel tracking
+6. Add initialization handshake
+7. Write comprehensive unit tests
+8. Document usage examples
