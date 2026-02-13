@@ -22,6 +22,52 @@
 //! - `hooks`: Lifecycle event hooks
 //! - `error`: Error types and handling
 //!
+//! # Subagent Support
+//!
+//! Rusty Claw supports spawning and managing subagents with dedicated prompts and tool restrictions:
+//!
+//! ```no_run
+//! use rusty_claw::prelude::*;
+//! use rusty_claw::options::AgentDefinition;
+//! use std::collections::HashMap;
+//!
+//! # async fn example() -> Result<(), ClawError> {
+//! // Define specialized agents
+//! let mut agents = HashMap::new();
+//! agents.insert(
+//!     "researcher".to_string(),
+//!     AgentDefinition {
+//!         description: "Research agent for code analysis".to_string(),
+//!         prompt: "You are a research assistant".to_string(),
+//!         tools: vec!["Read".to_string(), "Grep".to_string()],
+//!         model: Some("claude-sonnet-4".to_string()),
+//!     },
+//! );
+//!
+//! // Configure lifecycle hooks
+//! let mut hooks = HashMap::new();
+//! hooks.insert(
+//!     HookEvent::SubagentStart,
+//!     vec![HookMatcher { tool_name: Some("Bash".to_string()) }],
+//! );
+//!
+//! // Build options and connect client
+//! let options = ClaudeAgentOptions::builder()
+//!     .agents(agents)
+//!     .hooks(hooks)
+//!     .build();
+//!
+//! let mut client = ClaudeClient::new(options)?;
+//! client.connect().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`examples/subagent_usage.rs`](https://github.com/citadelgrad/rusty_claw/blob/main/crates/rusty_claw/examples/subagent_usage.rs)
+//! for a complete working example.
+//!
+//! For detailed documentation on subagent lifecycle hooks, see [`docs/HOOKS.md`](https://github.com/citadelgrad/rusty_claw/blob/main/docs/HOOKS.md).
+//!
 //! # Example
 //!
 //! ```ignore

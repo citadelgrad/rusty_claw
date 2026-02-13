@@ -1,572 +1,514 @@
-# Investigation: rusty_claw-zyo - Implement #[claw_tool] proc macro
+# Investigation: rusty_claw-b4s - Implement Subagent Support
 
-**Task ID:** rusty_claw-zyo
-**Title:** Implement #[claw_tool] proc macro
-**Priority:** P2 (High)
+**Task ID:** rusty_claw-b4s
+**Priority:** P3
+**Status:** IN_PROGRESS
 **Date:** 2026-02-13
-**Status:** Investigation Complete
+
+---
 
 ## Executive Summary
 
-This task requires implementing a procedural attribute macro `#[claw_tool]` that automatically generates MCP tool definitions from annotated Rust functions. The macro will:
+This task requires completing the subagent support infrastructure that is already partially implemented in the codebase. The `AgentDefinition` struct exists but needs to be properly integrated into the control protocol's initialize request, and the `SubagentStart`/`SubagentStop` hook events are already defined but need examples and documentation.
 
-1. Parse function signatures and extract parameter names/types
-2. Auto-derive JSON Schema for input_schema from parameters
-3. Generate a builder function that returns `SdkMcpTool`
-4. Generate a handler struct that implements `ToolHandler`
-5. Validate that parameters are JSON-serializable
-6. Handle errors gracefully with clear compile-time error messages
+**Current State:** ✅ Foundation exists (75% complete)
+- `AgentDefinition` struct is defined in `options.rs` with all required fields
+- `HookEvent` enum already includes `SubagentStart` and `SubagentStop` variants
+- `Initialize` control request already includes `agents` field
+- Builder pattern already supports `.agents()` method
 
-## Current State
+**What's Missing:** 🔨 Integration and documentation (25% remaining)
+1. Ensure `AgentDefinition` is properly serialized in initialize control request
+2. Add comprehensive tests for agent registration
+3. Create example showing subagent usage
+4. Document the subagent lifecycle and hook events
 
-### Existing Infrastructure ✅
+---
 
-**rusty_claw_macros crate exists:**
-- Location: `crates/rusty_claw_macros/`
-- Dependencies: `syn`, `quote`, `proc-macro2` (already in workspace)
-- Current implementation: Placeholder that passes through input unchanged
-- File: `src/lib.rs` (30 lines, stub implementation)
+## Current Implementation Analysis
 
-**Target types exist in rusty_claw:**
-- `SdkMcpTool` struct - Located in `mcp_server.rs:320-456`
-- `ToolHandler` trait - Located in `mcp_server.rs:274-287`
-- `ToolResult` struct - Located in `mcp_server.rs:185-245`
-- `ToolContent` enum - Located in `mcp_server.rs:119-166`
+### 1. AgentDefinition Struct (options.rs:202-213)
 
-**MCP Server bridge complete (rusty_claw-tlh):**
-- All dependencies satisfied ✅
-- Ready for macro integration
+**Status:** ✅ COMPLETE
 
-### Specification from SPEC.md
-
-**Input format:**
 ```rust
-#[claw_tool(name = "lookup_user", description = "Look up a user by ID")]
-async fn lookup_user(user_id: String) -> ToolResult {
-    ToolResult::text(format!("Found user: {user_id}"))
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDefinition {
+    /// Agent description
+    pub description: String,
+    /// Agent prompt
+    pub prompt: String,
+    /// Allowed tools
+    pub tools: Vec<String>,
+    /// Model override
+    pub model: Option<String>,
 }
 ```
 
-**Expected expansion:**
+**Analysis:**
+- Matches SPEC.md section 5.1 exactly
+- Already has `Serialize`/`Deserialize` derives (required for control protocol)
+- All fields match Python SDK structure
+- Public API is correct
+
+**Verification:**
 ```rust
-fn lookup_user() -> SdkMcpTool {
-    SdkMcpTool::new(
-        "lookup_user",
-        "Look up a user by ID",
-        json!({
-            "type": "object",
-            "properties": {
-                "user_id": { "type": "string" }
-            },
-            "required": ["user_id"]
-        }),
-        Arc::new(LookupUserHandler),
-    )
-}
+// From SPEC.md:
+// pub struct AgentDefinition {
+//     pub description: String,
+//     pub prompt: String,
+//     pub tools: Vec<String>,
+//     pub model: Option<String>,
+// }
+```
+✅ **No changes needed**
 
-struct LookupUserHandler;
+---
 
-#[async_trait]
-impl ToolHandler for LookupUserHandler {
-    async fn call(&self, args: serde_json::Value) -> Result<ToolResult, ClawError> {
-        let user_id: String = serde_json::from_value(args["user_id"].clone())?;
-        // Original function body
-        Ok(ToolResult::text(format!("Found user: {user_id}")))
-    }
+### 2. HookEvent Enum (options.rs:128-151)
+
+**Status:** ✅ COMPLETE
+
+```rust
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum HookEvent {
+    // ... other events ...
+    SubagentStop,    // Line 142
+    SubagentStart,   // Line 144
+    // ... other events ...
 }
 ```
 
-## Implementation Plan
+**Analysis:**
+- Both `SubagentStart` and `SubagentStop` variants exist
+- Properly annotated with `#[serde(rename_all = "PascalCase")]`
+- Will serialize as `"SubagentStart"` and `"SubagentStop"` in JSON
 
-### Phase 1: Parse Macro Attributes and Function Signature (45 min)
-
-**Goal:** Extract tool metadata and function parameters
-
-**Tasks:**
-1. Parse `name` and `description` from macro attributes
-2. Extract function name (fallback if `name` not provided)
-3. Parse function parameters (name, type)
-4. Validate function signature (async, return type)
-5. Handle doc comments for description fallback
-
-**Files to modify:**
-- `crates/rusty_claw_macros/src/lib.rs`
-
-**Key considerations:**
-- Must support both `name = "..."` and inferring from function name
-- Must support both `description = "..."` and inferring from doc comments
-- Function must be async
-- Return type must be `ToolResult` or `Result<ToolResult, _>`
-
-**Code structure:**
+**Verification:**
 ```rust
-struct ClawToolArgs {
-    name: Option<String>,
-    description: Option<String>,
-}
+// From SPEC.md section 6.1:
+// pub enum HookEvent {
+//     SubagentStop,
+//     SubagentStart,
+// }
+```
+✅ **No changes needed**
 
-fn parse_claw_tool_args(attr: TokenStream) -> syn::Result<ClawToolArgs> {
-    // Parse name = "...", description = "..." pairs
-}
+---
 
-fn extract_doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
-    // Extract /// comments
+### 3. ClaudeAgentOptions (options.rs:234-303)
+
+**Status:** ✅ COMPLETE
+
+```rust
+pub struct ClaudeAgentOptions {
+    // ... other fields ...
+
+    // Subagents (placeholder for future tasks)
+    /// Agent definitions
+    pub agents: HashMap<String, AgentDefinition>,  // Line 268
+
+    // ... other fields ...
 }
 ```
 
-### Phase 2: Generate JSON Schema from Parameters (60 min)
+**Analysis:**
+- `agents` field exists with correct type
+- Uses `HashMap<String, AgentDefinition>` (agent name → definition)
+- Already included in builder pattern
 
-**Goal:** Convert Rust types to JSON Schema
-
-**Tasks:**
-1. Map common Rust types to JSON types
-2. Handle Option<T> (not required)
-3. Handle Vec<T> (arrays)
-4. Handle nested types (basic support)
-5. Generate required fields list
-
-**Type mapping:**
+**Verification:**
 ```rust
-String, &str         → "string"
-i32, i64, u32, u64   → "number"
-f32, f64             → "number"
-bool                 → "boolean"
-Vec<T>               → { "type": "array", "items": <T schema> }
-Option<T>            → <T schema> (not in required list)
+// From SPEC.md section 5.1:
+// pub agents: HashMap<String, AgentDefinition>
 ```
+✅ **No changes needed**
 
-**Code structure:**
+---
+
+### 4. ClaudeAgentOptionsBuilder (options.rs:440-594)
+
+**Status:** ✅ COMPLETE
+
 ```rust
-fn type_to_json_schema(ty: &syn::Type) -> TokenStream2 {
-    match ty {
-        syn::Type::Path(path) => {
-            let ident = path.path.segments.last().unwrap().ident.to_string();
-            match ident.as_str() {
-                "String" => quote! { json!({"type": "string"}) },
-                "i32" | "i64" | "u32" | "u64" | "f32" | "f64" =>
-                    quote! { json!({"type": "number"}) },
-                "bool" => quote! { json!({"type": "boolean"}) },
-                "Option" => /* handle optional */,
-                "Vec" => /* handle arrays */,
-                _ => quote! { json!({"type": "object"}) }, // fallback
-            }
-        }
-        _ => quote! { json!({"type": "object"}) }, // fallback
-    }
-}
+impl ClaudeAgentOptionsBuilder {
+    // ... other methods ...
 
-fn generate_input_schema(params: &[FnParam]) -> TokenStream2 {
-    // Generate JSON Schema with properties and required fields
-}
-```
-
-### Phase 3: Generate Handler Struct and ToolHandler Impl (60 min)
-
-**Goal:** Generate handler that wraps original function body
-
-**Tasks:**
-1. Generate unique handler struct name (e.g., `LookupUserHandler`)
-2. Implement `ToolHandler` trait
-3. Extract arguments from JSON
-4. Call original function body
-5. Handle error conversion
-
-**Code structure:**
-```rust
-fn generate_handler(
-    fn_name: &syn::Ident,
-    params: &[FnParam],
-    fn_body: &syn::Block,
-) -> TokenStream2 {
-    let handler_name = format_ident!("{}Handler", /* CamelCase fn_name */);
-
-    // Generate argument extraction
-    let arg_extractions = params.iter().map(|param| {
-        let name = &param.name;
-        let ty = &param.ty;
-        quote! {
-            let #name: #ty = serde_json::from_value(
-                args[stringify!(#name)].clone()
-            )?;
-        }
-    });
-
-    quote! {
-        struct #handler_name;
-
-        #[async_trait::async_trait]
-        impl rusty_claw::mcp_server::ToolHandler for #handler_name {
-            async fn call(
-                &self,
-                args: serde_json::Value
-            ) -> Result<rusty_claw::mcp_server::ToolResult, rusty_claw::ClawError> {
-                #(#arg_extractions)*
-                #fn_body
-            }
-        }
-    }
-}
-```
-
-### Phase 4: Generate Builder Function (30 min)
-
-**Goal:** Generate function that returns SdkMcpTool
-
-**Tasks:**
-1. Generate function with original name
-2. Construct SdkMcpTool with metadata
-3. Wrap handler in Arc
-
-**Code structure:**
-```rust
-fn generate_tool_builder(
-    fn_name: &syn::Ident,
-    tool_name: &str,
-    description: &str,
-    input_schema: TokenStream2,
-    handler_name: &syn::Ident,
-) -> TokenStream2 {
-    quote! {
-        pub fn #fn_name() -> rusty_claw::mcp_server::SdkMcpTool {
-            rusty_claw::mcp_server::SdkMcpTool::new(
-                #tool_name,
-                #description,
-                #input_schema,
-                std::sync::Arc::new(#handler_name),
-            )
-        }
-    }
-}
-```
-
-### Phase 5: Error Handling and Validation (45 min)
-
-**Goal:** Provide clear compile-time errors
-
-**Tasks:**
-1. Validate function is async
-2. Validate return type
-3. Validate parameter types (JSON-serializable)
-4. Provide helpful error messages
-
-**Validation checks:**
-```rust
-fn validate_function(func: &syn::ItemFn) -> syn::Result<()> {
-    // Check for async
-    if func.sig.asyncness.is_none() {
-        return Err(syn::Error::new_spanned(
-            &func.sig.fn_token,
-            "#[claw_tool] requires async function"
-        ));
+    /// Set agents
+    pub fn agents(mut self, agents: HashMap<String, AgentDefinition>) -> Self {
+        self.inner.agents = agents;  // Line 513-516
+        self
     }
 
-    // Check return type
-    match &func.sig.output {
-        syn::ReturnType::Type(_, ty) => {
-            // Validate it's ToolResult or Result<ToolResult, _>
-        }
-        _ => return Err(syn::Error::new_spanned(
-            &func.sig,
-            "#[claw_tool] requires return type ToolResult or Result<ToolResult, E>"
-        )),
-    }
-
-    Ok(())
+    // ... other methods ...
 }
 ```
 
-### Phase 6: Integration Tests (60 min)
+**Analysis:**
+- Builder method exists with correct signature
+- Follows same pattern as other builder methods
 
-**Goal:** Verify macro works end-to-end
+**Verification:**
+✅ **No changes needed**
 
-**Tasks:**
-1. Create test file `crates/rusty_claw_macros/tests/integration.rs`
-2. Test basic function with String parameter
-3. Test function with multiple parameters
-4. Test function with optional parameters
-5. Test function with Vec parameters
-6. Test error cases (compile_fail tests)
+---
 
-**Test structure:**
+### 5. Initialize Control Request (control/messages.rs:56-95)
+
+**Status:** ✅ COMPLETE
+
 ```rust
-#[test]
-fn test_basic_tool() {
-    #[claw_tool(name = "echo", description = "Echo a message")]
-    async fn echo_tool(message: String) -> ToolResult {
-        ToolResult::text(message)
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum ControlRequest {
+    Initialize {
+        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+        hooks: HashMap<HookEvent, Vec<HookMatcher>>,
 
-    let tool = echo_tool();
-    assert_eq!(tool.name, "echo");
-    assert_eq!(tool.description, "Echo a message");
-    // Validate schema
-}
+        /// Agent definitions for spawning subagents
+        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+        agents: HashMap<String, AgentDefinition>,  // Line 82-83
 
-#[test]
-fn test_multiple_params() {
-    #[claw_tool]
-    async fn add(a: i32, b: i32) -> ToolResult {
-        ToolResult::text(format!("{}", a + b))
-    }
+        #[serde(skip_serializing_if = "Vec::is_empty", default)]
+        sdk_mcp_servers: Vec<SdkMcpServer>,
 
-    let tool = add();
-    // Validate schema has both a and b
-}
+        #[serde(skip_serializing_if = "Option::is_none")]
+        permissions: Option<PermissionMode>,
 
-#[tokio::test]
-async fn test_tool_execution() {
-    #[claw_tool]
-    async fn greet(name: String) -> ToolResult {
-        ToolResult::text(format!("Hello, {}!", name))
-    }
-
-    let tool = greet();
-    let result = tool.execute(json!({"name": "World"})).await.unwrap();
-    // Validate result
+        can_use_tool: bool,
+    },
+    // ... other variants ...
 }
 ```
 
-### Phase 7: Documentation and Examples (45 min)
+**Analysis:**
+- `agents` field is properly included in `Initialize` variant
+- Has correct serde attributes:
+  - `#[serde(skip_serializing_if = "HashMap::is_empty", default)]` - omits empty maps
+- Type is correct: `HashMap<String, AgentDefinition>`
+- Documentation comment exists
 
-**Goal:** Comprehensive documentation
-
-**Tasks:**
-1. Update `lib.rs` documentation with examples
-2. Add inline documentation for helper functions
-3. Create example in doc comment
-4. Document supported types
-5. Document error cases
-
-**Documentation sections:**
+**Verification:**
 ```rust
-//! # Examples
-//!
-//! ## Basic usage
-//!
-//! ```
-//! use rusty_claw::prelude::*;
-//!
-//! #[claw_tool(name = "greet", description = "Greet a user")]
-//! async fn greet_user(name: String) -> ToolResult {
-//!     ToolResult::text(format!("Hello, {}!", name))
-//! }
-//! ```
-//!
-//! ## Multiple parameters
-//!
-//! ```
-//! #[claw_tool]
-//! async fn calculate(x: i32, y: i32, operation: String) -> ToolResult {
-//!     // ...
-//! }
-//! ```
-//!
-//! ## Optional parameters
-//!
-//! ```
-//! #[claw_tool]
-//! async fn search(query: String, limit: Option<i32>) -> ToolResult {
-//!     // limit is not required in the schema
-//! }
-//! ```
+// From SPEC.md section 4.3:
+// Initialize {
+//     hooks: HashMap<HookEvent, Vec<HookMatcher>>,
+//     agents: HashMap<String, AgentDefinition>,  // ✅
+//     sdk_mcp_servers: Vec<SdkMcpServer>,
+//     permissions: Option<PermissionMode>,
+//     can_use_tool: bool,
+// }
 ```
+✅ **No changes needed**
 
-### Phase 8: Final Testing and Verification (30 min)
+---
 
-**Goal:** Ensure quality standards
+## What Needs to Be Done
 
-**Tasks:**
-1. Run `cargo test --package rusty_claw_macros`
-2. Run `cargo clippy --package rusty_claw_macros`
-3. Run integration tests with main crate
-4. Verify documentation builds
-5. Test compilation with various parameter types
+### Task 1: Add Integration Test for Agent Registration
 
-**Commands:**
-```bash
-# Unit tests
-cargo test --package rusty_claw_macros
+**File:** `crates/rusty_claw/tests/integration/agent_test.rs` (NEW FILE)
 
-# Clippy
-cargo clippy --package rusty_claw_macros -- -D warnings
+**Purpose:** Verify that agents are properly serialized in the initialize control request
 
-# Doc tests
-cargo test --package rusty_claw_macros --doc
+**Test Cases:**
+1. ✅ `test_agent_definition_serialization` - Verify AgentDefinition serializes correctly
+2. ✅ `test_initialize_with_agents` - Verify Initialize request includes agents field
+3. ✅ `test_agent_registration_empty` - Verify empty agents map is omitted from JSON
+4. ✅ `test_agent_registration_multiple` - Verify multiple agents serialize correctly
 
-# Full workspace test
-cargo test --workspace
-```
+**Estimated Lines:** ~150 lines
+
+---
+
+### Task 2: Create Subagent Example
+
+**File:** `examples/subagent_usage.rs` (NEW FILE)
+
+**Purpose:** Demonstrate how to define and use subagents with hooks
+
+**Estimated Lines:** ~60 lines
+
+---
+
+### Task 3: Add Subagent Hook Documentation
+
+**File:** `docs/HOOKS.md` (NEW SECTION)
+
+**Purpose:** Document SubagentStart and SubagentStop hook lifecycle
+
+**Estimated Lines:** ~80 lines
+
+---
+
+### Task 4: Update README/Main Documentation
+
+**File:** `README.md` or `docs/README.md`
+
+**Purpose:** Add subagent section to main documentation
+
+**Estimated Lines:** ~30 lines
+
+---
 
 ## Files to Create/Modify
 
-### Modified Files (1 file)
+### New Files (3 files, ~290 lines total)
 
-**1. `crates/rusty_claw_macros/src/lib.rs`** (~400-500 lines)
-- Current: 30 lines (placeholder)
-- After: ~500 lines (full implementation)
-- Changes:
-  - Replace placeholder `claw_tool` function
-  - Add attribute parsing
-  - Add JSON schema generation
-  - Add handler generation
-  - Add builder function generation
-  - Add validation logic
-  - Add comprehensive documentation
+| File | Lines | Purpose |
+|------|-------|---------|
+| `crates/rusty_claw/tests/integration/agent_test.rs` | ~150 | Integration tests for agent registration |
+| `examples/subagent_usage.rs` | ~60 | Example showing subagent usage |
+| `docs/HOOKS.md` (new section) | ~80 | Document SubagentStart/SubagentStop hooks |
 
-### New Files (1 file)
+### Modified Files (1 file, ~30 lines added)
 
-**2. `crates/rusty_claw_macros/tests/integration.rs`** (~200 lines)
-- Integration tests for macro expansion
-- Test various parameter types
-- Test error cases
-- Test end-to-end execution
+| File | Changes | Purpose |
+|------|---------|---------|
+| `README.md` or `docs/README.md` | Add subagent section | User-facing documentation |
 
-## Dependencies
+### No Changes Required (5 files, 0 lines)
 
-### Satisfied ✅
+| File | Reason |
+|------|--------|
+| `crates/rusty_claw/src/options.rs` | AgentDefinition already complete |
+| `crates/rusty_claw/src/control/messages.rs` | Initialize already includes agents |
 
-- `syn` (workspace) - AST parsing
-- `quote` (workspace) - Code generation
-- `proc-macro2` (workspace) - Token manipulation
-- `rusty_claw-tlh` (SDK MCP Server bridge) - COMPLETE
+---
 
-### Optional (not required)
+## Dependencies & Prerequisites
 
-- `schemars` - Could use for automatic JSON Schema generation, but manual implementation is sufficient
-- Additional validation crates - Not needed for MVP
+### ✅ Satisfied Dependencies
 
-## Type Mapping Strategy
+1. **rusty_claw-qrl** (Implement ClaudeClient) - CLOSED ✓
+   - ClaudeClient exists and is functional
+   - Control protocol is implemented
+   - Initialize request is working
 
-### Supported Types (Phase 1)
+### 🔗 No Blockers
 
-| Rust Type | JSON Schema | Required Trait |
-|-----------|-------------|----------------|
-| String | `{"type": "string"}` | Deserialize |
-| &str | `{"type": "string"}` | N/A (not supported in params) |
-| i32, i64, u32, u64 | `{"type": "number"}` | Deserialize |
-| f32, f64 | `{"type": "number"}` | Deserialize |
-| bool | `{"type": "boolean"}` | Deserialize |
-| Option<T> | Same as T | Deserialize, not required |
-| Vec<T> | `{"type": "array", "items": T}` | Deserialize |
+All required infrastructure exists:
+- ✅ `AgentDefinition` struct is complete
+- ✅ `HookEvent::SubagentStart` and `HookEvent::SubagentStop` exist
+- ✅ `Initialize` control request includes `agents` field
+- ✅ Builder pattern supports `.agents()` method
+- ✅ Serialization/deserialization works (derives present)
 
-### Future Extensions (Not in Scope)
+---
 
-- HashMap/BTreeMap → `{"type": "object"}`
-- Custom structs with `#[derive(serde::Deserialize)]` → complex schema
-- Tuples → array with fixed length
-- Enums → oneOf schema
+## Testing Strategy
+
+### Integration Tests (Required)
+
+**File:** `crates/rusty_claw/tests/integration/agent_test.rs`
+
+**Test Coverage:**
+1. ✅ AgentDefinition serialization
+2. ✅ Initialize request with agents
+3. ✅ Empty agents map handling (should be omitted from JSON)
+4. ✅ Multiple agents in single request
+5. ✅ Optional model field (Some vs None)
+
+**Execution:**
+```bash
+cargo test --test agent_test
+```
+
+---
+
+## Implementation Phases
+
+### Phase 1: Integration Tests (30 min)
+
+**Goal:** Verify agent registration works correctly
+
+**Tasks:**
+1. Create `tests/integration/agent_test.rs`
+2. Write 4 test cases (serialization, registration, empty, multiple)
+3. Run tests with `cargo test --test agent_test`
+4. Verify all tests pass
+
+**Success Criteria:**
+- ✅ All 4 tests pass
+- ✅ AgentDefinition serializes to correct JSON
+- ✅ Initialize request includes agents field
+- ✅ Empty agents map is omitted from JSON
+
+---
+
+### Phase 2: Example Code (20 min)
+
+**Goal:** Demonstrate subagent usage
+
+**Tasks:**
+1. Create `examples/subagent_usage.rs`
+2. Define 2 example agents (researcher, writer)
+3. Show hook registration for SubagentStart/SubagentStop
+4. Add comprehensive documentation comments
+
+**Success Criteria:**
+- ✅ Example compiles without errors
+- ✅ Code is well-documented
+- ✅ Shows both agent definition and hook usage
+
+---
+
+### Phase 3: Hook Documentation (25 min)
+
+**Goal:** Document SubagentStart/SubagentStop hooks
+
+**Tasks:**
+1. Create or update `docs/HOOKS.md`
+2. Add SubagentStart hook documentation
+3. Add SubagentStop hook documentation
+4. Include JSON examples and code samples
+
+**Success Criteria:**
+- ✅ Hook input format documented
+- ✅ Use cases listed
+- ✅ Code examples provided
+
+---
+
+### Phase 4: Main Documentation (15 min)
+
+**Goal:** Add subagent section to README
+
+**Tasks:**
+1. Update `README.md` or `docs/README.md`
+2. Add subagent section with code example
+3. Link to example file and hooks documentation
+
+**Success Criteria:**
+- ✅ Subagent section added to main docs
+- ✅ Links to examples and detailed docs
+- ✅ Clear, concise explanation
+
+---
+
+### Phase 5: Verification (10 min)
+
+**Goal:** Ensure everything works together
+
+**Tasks:**
+1. Run all tests: `cargo test`
+2. Build examples: `cargo build --examples`
+3. Check documentation: `cargo doc --open`
+4. Verify no clippy warnings: `cargo clippy`
+
+**Success Criteria:**
+- ✅ All tests pass
+- ✅ All examples compile
+- ✅ Documentation builds
+- ✅ Zero clippy warnings
+
+---
+
+## Acceptance Criteria
+
+From task description: "Implement AgentDefinition struct and subagent configuration in options. Support SubagentStart/SubagentStop hook events and agent registration in the initialize control request."
+
+### Requirement 1: AgentDefinition struct ✅ COMPLETE
+
+**Status:** ✅ Already implemented in `options.rs:202-213`
+
+### Requirement 2: Subagent configuration in options ✅ COMPLETE
+
+**Status:** ✅ Already implemented in `options.rs:268` and builder at `options.rs:513-516`
+
+### Requirement 3: SubagentStart/SubagentStop hook events ✅ COMPLETE
+
+**Status:** ✅ Already implemented in `options.rs:142-144`
+
+### Requirement 4: Agent registration in initialize control request ✅ COMPLETE
+
+**Status:** ✅ Already implemented in `control/messages.rs:82-83`
+
+---
+
+## What Actually Needs Implementation
+
+### Core Implementation: ✅ 100% COMPLETE
+
+All required code already exists:
+- ✅ AgentDefinition struct
+- ✅ HookEvent variants
+- ✅ Options field and builder
+- ✅ Initialize request field
+
+### Testing & Documentation: 🔨 0% COMPLETE (Required Work)
+
+What needs to be added:
+1. Integration tests (~150 lines)
+2. Example code (~60 lines)
+3. Hook documentation (~80 lines)
+4. README section (~30 lines)
+
+**Total New Code:** ~320 lines across 3-4 files
+
+---
 
 ## Risk Assessment
 
-### High Confidence ✅
+### Low Risk
 
-1. **Macro infrastructure exists** - No need to set up crate
-2. **Target types well-defined** - SdkMcpTool, ToolHandler, ToolResult are stable
-3. **Dependencies available** - syn, quote, proc-macro2 in workspace
-4. **Clear specification** - SPEC.md provides detailed example
+**Why:**
+- All core infrastructure already exists and is tested
+- No changes to existing code required
+- Only adding tests and documentation
+- No breaking changes
+- No complex logic to implement
 
-### Medium Risk ⚠️
+### Success Probability
 
-1. **Type mapping complexity**
-   - **Mitigation:** Start with basic types, add complex types incrementally
-   - **Fallback:** Default to `{"type": "object"}` for unknown types
+**95% - Very High**
 
-2. **Error message quality**
-   - **Mitigation:** Use `syn::Error::new_spanned` for precise error locations
-   - **Testing:** Include compile_fail tests
+**Reasoning:**
+1. Core implementation is complete (verified by code inspection)
+2. Only need to add tests and examples (straightforward)
+3. No dependencies on external tasks
+4. Clear specification in SPEC.md
+5. Similar patterns already exist in codebase
 
-3. **Async function handling**
-   - **Mitigation:** Check for `asyncness` in signature validation
-   - **Known pattern:** `async_trait` already used in codebase
+---
 
-### Low Risk ✅
+## Time Estimate
 
-1. **Integration with existing code** - Types already defined
-2. **Testing infrastructure** - Can use standard Rust test framework
-3. **Documentation** - Well-understood patterns from other macros
+| Phase | Task | Duration |
+|-------|------|----------|
+| 1 | Write integration tests | 30 min |
+| 2 | Create example code | 20 min |
+| 3 | Write hook documentation | 25 min |
+| 4 | Update main documentation | 15 min |
+| 5 | Verification and testing | 10 min |
+| **Total** | | **100 min (1.7 hours)** |
 
-## Acceptance Criteria Mapping
+---
 
-| # | Criterion | Implementation Phase | Status |
-|---|-----------|---------------------|--------|
-| 1 | Functional #[claw_tool] macro | Phases 1-5 | ⏭️ |
-| 2 | Auto-derive input_schema | Phase 2 | ⏭️ |
-| 3 | Generate SdkMcpTool struct | Phase 4 | ⏭️ |
-| 4 | Generate ToolHandler impl | Phase 3 | ⏭️ |
-| 5 | Validate JSON-serializable params | Phase 5 | ⏭️ |
-| 6 | Handle error cases gracefully | Phase 5 | ⏭️ |
-| 7 | Integration tests with SDK | Phase 6 | ⏭️ |
-| 8 | Zero clippy warnings | Phase 8 | ⏭️ |
-| 9 | Comprehensive docs/examples | Phase 7 | ⏭️ |
+## Summary
 
-## Timeline Estimate
+**Status:** ✅ Ready to implement (all blockers cleared)
 
-| Phase | Duration | Cumulative |
-|-------|----------|------------|
-| 1. Parse attributes & signature | 45 min | 0:45 |
-| 2. Generate JSON Schema | 60 min | 1:45 |
-| 3. Generate handler impl | 60 min | 2:45 |
-| 4. Generate builder function | 30 min | 3:15 |
-| 5. Error handling | 45 min | 4:00 |
-| 6. Integration tests | 60 min | 5:00 |
-| 7. Documentation | 45 min | 5:45 |
-| 8. Final verification | 30 min | 6:15 |
+**Complexity:** 🟢 LOW - Core implementation already complete
 
-**Total Estimated Time:** ~6.25 hours
+**Scope:** Testing + Documentation only (~320 new lines)
 
-## Success Metrics
+**Confidence:** 95% - High confidence of success
 
-**Code Quality:**
-- ✅ Zero clippy warnings
-- ✅ All tests pass
-- ✅ Doc tests pass
-- ✅ Clear error messages
+**Estimated Time:** 1.7 hours
 
-**Functionality:**
-- ✅ Macro expands correctly for basic types
-- ✅ Macro expands correctly for Option<T>
-- ✅ Macro expands correctly for Vec<T>
-- ✅ Generated tools are executable
-- ✅ JSON Schema matches function signature
+**Key Finding:** The task description says "Implement AgentDefinition struct and subagent configuration" but this work is already complete! The actual work needed is:
+- Add comprehensive integration tests
+- Create usage examples
+- Document the hook events
+- Update user-facing documentation
 
-**Documentation:**
-- ✅ Comprehensive doc comments
-- ✅ Multiple examples in lib.rs
-- ✅ Clear explanation of supported types
-- ✅ Error case documentation
-
-## Next Steps
-
-1. ✅ Investigation complete
-2. ⏭️ Phase 1: Parse macro attributes and function signature
-3. ⏭️ Phase 2: Generate JSON Schema
-4. ⏭️ Phase 3: Generate handler implementation
-5. ⏭️ Phase 4: Generate builder function
-6. ⏭️ Phase 5: Add error handling
-7. ⏭️ Phase 6: Write integration tests
-8. ⏭️ Phase 7: Add documentation
-9. ⏭️ Phase 8: Final verification and commit
-
-## References
-
-- **SPEC.md:623-658** - Macro specification and expected expansion
-- **mcp_server.rs:274-287** - ToolHandler trait definition
-- **mcp_server.rs:320-456** - SdkMcpTool struct definition
-- **mcp_server.rs:185-245** - ToolResult struct definition
-- **Cargo.toml:38-41** - Proc macro dependencies (syn, quote, proc-macro2)
+This is a documentation and testing task, not an implementation task.
 
 ---
 
 **Investigation Status:** ✅ COMPLETE
 **Ready to Proceed:** YES
 **Blockers:** NONE
-
-The investigation is complete with clear understanding of:
-- ✅ Existing infrastructure and types
-- ✅ Expected macro behavior from SPEC.md
-- ✅ Implementation approach (8 phases)
-- ✅ Type mapping strategy
-- ✅ Risk mitigation
-- ✅ Success criteria
-
-**Next step:** Phase 1 - Parse macro attributes and function signature! 🚀
+**Next Action:** Phase 1 - Write integration tests

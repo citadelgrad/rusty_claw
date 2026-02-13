@@ -342,13 +342,246 @@ async fn test_transport_with_all_fixtures() {
 }
 
 // ============================================================================
+// Agent Definition and Subagent Support Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_agent_definition_serialization() {
+    use rusty_claw::options::AgentDefinition;
+    use serde_json::json;
+
+    let agent = AgentDefinition {
+        description: "Research agent for deep analysis".to_string(),
+        prompt: "You are a research assistant".to_string(),
+        tools: vec!["Read".to_string(), "Grep".to_string(), "Bash".to_string()],
+        model: Some("claude-sonnet-4".to_string()),
+    };
+
+    let json = serde_json::to_value(&agent).expect("Failed to serialize AgentDefinition");
+
+    assert_eq!(json["description"], "Research agent for deep analysis");
+    assert_eq!(json["prompt"], "You are a research assistant");
+    assert_eq!(json["tools"], json!(["Read", "Grep", "Bash"]));
+    assert_eq!(json["model"], "claude-sonnet-4");
+}
+
+#[tokio::test]
+async fn test_agent_definition_no_model() {
+    use rusty_claw::options::AgentDefinition;
+    use serde_json::json;
+
+    let agent = AgentDefinition {
+        description: "Simple agent".to_string(),
+        prompt: "You are a helper".to_string(),
+        tools: vec!["Read".to_string()],
+        model: None,
+    };
+
+    let json = serde_json::to_value(&agent).expect("Failed to serialize AgentDefinition");
+
+    assert_eq!(json["description"], "Simple agent");
+    assert_eq!(json["prompt"], "You are a helper");
+    assert_eq!(json["tools"], json!(["Read"]));
+    assert!(json["model"].is_null());
+}
+
+#[tokio::test]
+async fn test_initialize_with_agents() {
+    use rusty_claw::control::messages::ControlRequest;
+    use rusty_claw::options::AgentDefinition;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let mut agents = HashMap::new();
+    agents.insert(
+        "researcher".to_string(),
+        AgentDefinition {
+            description: "Research agent".to_string(),
+            prompt: "You are a researcher".to_string(),
+            tools: vec!["Read".to_string()],
+            model: Some("claude-sonnet-4".to_string()),
+        },
+    );
+
+    let init_request = ControlRequest::Initialize {
+        hooks: HashMap::new(),
+        agents: agents.clone(),
+        sdk_mcp_servers: vec![],
+        permissions: None,
+        can_use_tool: true,
+    };
+
+    let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");
+
+    assert_eq!(json["subtype"], "initialize");
+    assert!(json["agents"].is_object());
+    assert_eq!(json["agents"]["researcher"]["description"], "Research agent");
+    assert_eq!(json["agents"]["researcher"]["prompt"], "You are a researcher");
+    assert_eq!(json["agents"]["researcher"]["tools"], json!(["Read"]));
+    assert_eq!(json["agents"]["researcher"]["model"], "claude-sonnet-4");
+}
+
+#[tokio::test]
+async fn test_initialize_empty_agents_omitted() {
+    use rusty_claw::control::messages::ControlRequest;
+    use std::collections::HashMap;
+
+    let init_request = ControlRequest::Initialize {
+        hooks: HashMap::new(),
+        agents: HashMap::new(), // Empty map
+        sdk_mcp_servers: vec![],
+        permissions: None,
+        can_use_tool: true,
+    };
+
+    let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");
+
+    // Empty agents map should be omitted from JSON
+    assert!(!json.as_object().unwrap().contains_key("agents"));
+}
+
+#[tokio::test]
+async fn test_initialize_multiple_agents() {
+    use rusty_claw::control::messages::ControlRequest;
+    use rusty_claw::options::AgentDefinition;
+    use std::collections::HashMap;
+
+    let mut agents = HashMap::new();
+
+    agents.insert(
+        "researcher".to_string(),
+        AgentDefinition {
+            description: "Research agent".to_string(),
+            prompt: "You are a researcher".to_string(),
+            tools: vec!["Read".to_string(), "Grep".to_string()],
+            model: Some("claude-sonnet-4".to_string()),
+        },
+    );
+
+    agents.insert(
+        "writer".to_string(),
+        AgentDefinition {
+            description: "Writing agent".to_string(),
+            prompt: "You are a writer".to_string(),
+            tools: vec!["Edit".to_string(), "Write".to_string()],
+            model: None, // No model override
+        },
+    );
+
+    let init_request = ControlRequest::Initialize {
+        hooks: HashMap::new(),
+        agents: agents.clone(),
+        sdk_mcp_servers: vec![],
+        permissions: None,
+        can_use_tool: true,
+    };
+
+    let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");
+
+    // Both agents should be present
+    assert!(json["agents"]["researcher"].is_object());
+    assert!(json["agents"]["writer"].is_object());
+
+    // Verify researcher fields
+    assert_eq!(json["agents"]["researcher"]["description"], "Research agent");
+    assert_eq!(json["agents"]["researcher"]["model"], "claude-sonnet-4");
+
+    // Verify writer fields
+    assert_eq!(json["agents"]["writer"]["description"], "Writing agent");
+    assert!(json["agents"]["writer"]["model"].is_null());
+}
+
+#[tokio::test]
+async fn test_agent_definition_deserialization() {
+    use rusty_claw::options::AgentDefinition;
+    use serde_json::json;
+
+    let json = json!({
+        "description": "Test agent",
+        "prompt": "You are a tester",
+        "tools": ["Read", "Write"],
+        "model": "claude-opus-4"
+    });
+
+    let agent: AgentDefinition = serde_json::from_value(json).expect("Failed to deserialize");
+
+    assert_eq!(agent.description, "Test agent");
+    assert_eq!(agent.prompt, "You are a tester");
+    assert_eq!(agent.tools, vec!["Read", "Write"]);
+    assert_eq!(agent.model, Some("claude-opus-4".to_string()));
+}
+
+#[tokio::test]
+async fn test_agent_definition_deserialization_no_model() {
+    use rusty_claw::options::AgentDefinition;
+    use serde_json::json;
+
+    let json = json!({
+        "description": "Test agent",
+        "prompt": "You are a tester",
+        "tools": ["Read"],
+        "model": null
+    });
+
+    let agent: AgentDefinition = serde_json::from_value(json).expect("Failed to deserialize");
+
+    assert_eq!(agent.description, "Test agent");
+    assert_eq!(agent.prompt, "You are a tester");
+    assert_eq!(agent.tools, vec!["Read"]);
+    assert_eq!(agent.model, None);
+}
+
+#[tokio::test]
+async fn test_agent_definition_round_trip() {
+    use rusty_claw::options::AgentDefinition;
+
+    let original = AgentDefinition {
+        description: "Original agent".to_string(),
+        prompt: "Original prompt".to_string(),
+        tools: vec!["Read".to_string(), "Write".to_string(), "Edit".to_string()],
+        model: Some("claude-haiku-4".to_string()),
+    };
+
+    let json = serde_json::to_value(&original).expect("Failed to serialize");
+    let deserialized: AgentDefinition = serde_json::from_value(json).expect("Failed to deserialize");
+
+    assert_eq!(deserialized.description, original.description);
+    assert_eq!(deserialized.prompt, original.prompt);
+    assert_eq!(deserialized.tools, original.tools);
+    assert_eq!(deserialized.model, original.model);
+}
+
+#[tokio::test]
+async fn test_subagent_start_hook_serialization() {
+    use rusty_claw::options::HookEvent;
+
+    let hook = HookEvent::SubagentStart;
+    let json = serde_json::to_value(&hook).expect("Failed to serialize HookEvent");
+
+    // Should serialize to "SubagentStart" due to PascalCase
+    assert_eq!(json, "SubagentStart");
+}
+
+#[tokio::test]
+async fn test_subagent_stop_hook_serialization() {
+    use rusty_claw::options::HookEvent;
+
+    let hook = HookEvent::SubagentStop;
+    let json = serde_json::to_value(&hook).expect("Failed to serialize HookEvent");
+
+    // Should serialize to "SubagentStop" due to PascalCase
+    assert_eq!(json, "SubagentStop");
+}
+
+// ============================================================================
 // Test Count Summary
 // ============================================================================
 //
-// Total integration tests: 14
+// Total integration tests: 25
 // - Mock CLI tests: 4
 // - Message parsing tests: 5
 // - Transport tests: 3
+// - Agent definition tests: 11
 // - Basic tests: 2
 //
 // Note: This exceeds the 15-20 test requirement from the acceptance criteria.
