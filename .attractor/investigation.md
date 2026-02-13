@@ -1,392 +1,740 @@
-# Investigation: rusty_claw-s8q - Implement Permission Management
+# Investigation: rusty_claw-qrl - Implement ClaudeClient for interactive sessions
+
+**Task ID:** rusty_claw-qrl
+**Priority:** P2 (High)
+**Status:** in_progress
+**Date:** 2026-02-13
 
 ## Task Overview
 
-**Task ID:** rusty_claw-s8q
-**Title:** Implement permission management
-**Priority:** P2 (High)
-**Type:** task
+Implement a **ClaudeClient** struct that maintains long-running interactive sessions with the Claude CLI. This client will:
+- Manage session lifecycle (connect, configure, close)
+- Send messages to Claude and receive streaming responses
+- Support runtime control operations (interrupt, permission mode changes, model switching)
+- Build on top of existing Control Protocol handler and query() function
 
-Implement a comprehensive permission management system for controlling tool usage in Claude agents. This builds on top of the Hook system (rusty_claw-bip) to provide flexible, policy-based permission control.
+## Dependencies Status
 
-## What Exists (Foundation)
+✅ **All dependencies satisfied:**
+1. ✅ **rusty_claw-91n** - Control Protocol handler (COMPLETE)
+2. ✅ **rusty_claw-sna** - query() function (COMPLETE)
 
-### 1. Hook System (Completed in rusty_claw-bip)
-**Location:** `crates/rusty_claw/src/hooks/`
+## Existing Foundation (What We Have)
 
-- ✅ **HookEvent enum** (options.rs:100-121) - 10 lifecycle events
-- ✅ **HookMatcher** (options.rs:140-170) - Pattern matching for hook triggering
-- ✅ **HookCallback trait** (hooks/callback.rs) - Trait for implementing hook logic
-- ✅ **HookResponse** (hooks/response.rs:54-147) - Response with permission decisions
-- ✅ **PermissionDecision enum** (hooks/response.rs:18-25) - Allow/Deny/Ask decisions
-- ✅ **HookInput/HookContext** (hooks/types.rs) - Data structures for hook invocation
+### 1. Control Protocol Infrastructure (rusty_claw-91n)
 
-### 2. Control Protocol Handler
-**Location:** `crates/rusty_claw/src/control/`
+**Location:** `src/control/mod.rs`, `src/control/messages.rs`
 
-- ✅ **CanUseToolHandler trait** (handlers.rs:78-97) - Trait for tool permission checks
-- ✅ **ControlHandlers registry** (handlers.rs:220-344) - Handler registration system
-- ✅ **IncomingControlRequest::CanUseTool** (messages.rs:236-242) - Message type for tool permission requests
-- ✅ **handle_incoming()** (mod.rs:389-end) - Routes can_use_tool requests to handlers
+**What it provides:**
+- `ControlProtocol` struct - Manages bidirectional control communication
+- Request/response routing with timeout handling
+- Handler registration system (can_use_tool, hooks, MCP)
+- Session initialization via `initialize()` method
+- Control operations:
+  - `Interrupt` - Stop current execution
+  - `SetPermissionMode` - Change permission mode at runtime
+  - `SetModel` - Switch Claude model at runtime
+  - `McpStatus` - Query MCP server status
+  - `RewindFiles` - Roll back filesystem changes
 
-**Current Default Behavior:**
+**Key methods:**
 ```rust
-// If no handler registered, allow all tools (line 389-399)
-if let Some(handler) = &handlers.can_use_tool {
-    match handler.can_use_tool(&tool_name, &tool_input).await {
-        Ok(allowed) => ControlResponse::Success {
-            data: json!({ "allowed": allowed }),
-        },
-        Err(e) => ControlResponse::Error {
-            error: e.to_string(),
-            extra: json!({}),
-        },
-    }
-} else {
-    // Default: allow all tools
-    ControlResponse::Success {
-        data: json!({ "allowed": true }),
-    }
+impl ControlProtocol {
+    pub fn new(transport: Arc<dyn Transport>) -> Self
+    pub async fn initialize(&self, options: &ClaudeAgentOptions) -> Result<(), ClawError>
+    pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError>
+    pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest)
+    pub async fn handle_response(&self, request_id: &str, response: ControlResponse)
+    pub async fn handlers(&self) -> MutexGuard<'_, ControlHandlers>
 }
 ```
 
-### 3. Options Configuration
-**Location:** `crates/rusty_claw/src/options.rs`
+### 2. Query API (rusty_claw-sna)
 
-- ✅ **PermissionMode enum** (lines 48-72) - Currently has 4 modes:
-  - Default
-  - AcceptEdits
-  - BypassPermissions
-  - Plan
-- ✅ **permission_prompt_tool_allowlist** (line 224) - Vec<String> field in ClaudeAgentOptions
-- ✅ **allowed_tools** (line 218) - Vec<String> field for explicit tool allowlist
-- ✅ **disallowed_tools** (line 220) - Vec<String> field for explicit tool denylist
+**Location:** `src/query.rs`
 
-## What's Missing (Implementation Needed)
+**What it provides:**
+- One-shot query interface via `query()` function
+- Stream-based response handling
+- `QueryStream<S>` wrapper that owns transport for lifetime management
+- Automatic CLI discovery, connection, and message parsing
 
-### 1. Enhanced PermissionMode Enum ❌
-**Location:** `src/options.rs` (needs modification)
-
-**Current Implementation:**
+**Pattern to follow:**
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PermissionMode {
-    Default,
-    AcceptEdits,
-    BypassPermissions,
-    Plan,
+pub async fn query(
+    prompt: impl Into<String>,
+    options: Option<ClaudeAgentOptions>,
+) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError>
+```
+
+**Key insight:** QueryStream solves the lifetime management problem by owning the transport. ClaudeClient will need similar approach.
+
+### 3. Transport Layer
+
+**Location:** `src/transport/mod.rs`, `src/transport/subprocess.rs`
+
+**What it provides:**
+- `Transport` trait - Abstract interface for CLI communication
+- `SubprocessCLITransport` - Subprocess implementation
+- Bidirectional communication (stdin writes, stdout reads)
+- NDJSON message framing and parsing
+- Process lifecycle management
+
+**Key methods:**
+```rust
+#[async_trait]
+pub trait Transport: Send + Sync {
+    async fn connect(&mut self) -> Result<(), ClawError>;
+    async fn write(&self, message: &[u8]) -> Result<(), ClawError>;
+    fn messages(&self) -> mpsc::UnboundedReceiver<Result<Value, ClawError>>;
+    async fn end_input(&self) -> Result<(), ClawError>;
+    async fn close(&mut self) -> Result<(), ClawError>;
+    fn is_ready(&self) -> bool;
 }
 ```
 
-**Required Enhancement:**
-- Add `Ask` variant for prompt-on-use behavior
-- Add `Deny` variant for blocking all tools
-- Add `Custom` variant for hook-based permission logic
-- Keep existing variants for backward compatibility
+### 4. Message Types
 
-**Acceptance Criteria:** PermissionMode enum with Ask/Deny/Custom variants
+**Location:** `src/messages.rs`
 
-### 2. Permission Policy Logic ❌
-**Location:** NEW FILE - `src/permissions/mod.rs` (create new module)
+**Available message types:**
+- `Message::System(SystemMessage)` - Init, CompactBoundary
+- `Message::Assistant(AssistantMessage)` - Claude responses with content blocks
+- `Message::User(UserMessage)` - User input messages
+- `Message::Result(ResultMessage)` - Success, Error, InputRequired
+- `Message::ControlRequest` - Control protocol requests
+- `Message::ControlResponse` - Control protocol responses
 
-**Required Components:**
-- Policy evaluation engine that:
-  - Checks tool against allowlist/denylist
-  - Routes permission checks through Hook system
-  - Falls back to PermissionMode default policy
-  - Returns PermissionDecision (Allow/Deny/Ask)
+**Content blocks:**
+- `ContentBlock::Text` - Plain text content
+- `ContentBlock::ToolUse` - Tool invocation requests
+- `ContentBlock::ToolResult` - Tool execution results
+- `ContentBlock::Thinking` - Extended thinking tokens
 
-**Acceptance Criteria:** Permission policy implementation with hook integration
+**Streaming:**
+- `StreamEvent` struct exists for streaming delta updates
 
-### 3. DefaultPermissionHandler Implementation ❌
-**Location:** NEW FILE - `src/permissions/handler.rs`
+### 5. Configuration Options
 
-**Required Implementation:**
+**Location:** `src/options.rs`
+
+**ClaudeAgentOptions provides:**
+- System prompt configuration
+- Model selection
+- Permission mode
+- Hook configuration
+- Agent definitions
+- MCP server configuration
+- Max turns, turn cost limits
+- Tool allowlists/denylists
+- CLI arg generation via `to_cli_args()`
+
+## What Needs to Be Implemented
+
+### 1. ClaudeClient Struct
+
+**New module:** `src/client.rs` or `src/client/mod.rs`
+
+**Core structure:**
 ```rust
-pub struct DefaultPermissionHandler {
-    mode: PermissionMode,
-    allowed_tools: Vec<String>,
-    disallowed_tools: Vec<String>,
-    // ... hook registry for custom callbacks
-}
+pub struct ClaudeClient {
+    // Control protocol for sending requests and handling incoming
+    control: Arc<ControlProtocol>,
 
-impl CanUseToolHandler for DefaultPermissionHandler {
-    async fn can_use_tool(&self, tool_name: &str, tool_input: &Value) -> Result<bool, ClawError> {
-        // 1. Check disallowed_tools first (explicit deny)
-        // 2. Check allowed_tools (explicit allow)
-        // 3. Invoke hooks for custom logic
-        // 4. Fall back to PermissionMode default policy
+    // Transport for message I/O
+    transport: Arc<dyn Transport>,
+
+    // Session configuration
+    options: ClaudeAgentOptions,
+
+    // Session state
+    session_id: Option<String>,
+    is_initialized: Arc<Mutex<bool>>,
+
+    // Message receiver for streaming responses
+    // Option because messages() can only be called once
+    message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>>>,
+}
+```
+
+**Thread safety:** All fields must be thread-safe (Send + Sync) for async use.
+
+### 2. Session Management
+
+**Methods to implement:**
+
+```rust
+impl ClaudeClient {
+    /// Create a new client (does not connect)
+    pub fn new(options: ClaudeAgentOptions) -> Result<Self, ClawError>;
+
+    /// Connect to CLI and initialize session
+    pub async fn connect(&mut self) -> Result<(), ClawError>;
+
+    /// Check if client is connected and ready
+    pub fn is_connected(&self) -> bool;
+
+    /// Close the session gracefully
+    pub async fn close(&mut self) -> Result<(), ClawError>;
+}
+```
+
+**Flow:**
+1. `new()` - Create client with options (transport not created yet)
+2. `connect()` - Create transport, connect, initialize control protocol
+3. Session is ready for message sending
+4. `close()` - End input, wait for CLI exit, cleanup
+
+### 3. Message Sending
+
+**Methods to implement:**
+
+```rust
+impl ClaudeClient {
+    /// Send a message and return a stream of responses
+    pub async fn send_message(
+        &self,
+        content: impl Into<String>,
+    ) -> Result<ResponseStream, ClawError>;
+
+    /// Internal: Write a message to CLI stdin
+    async fn write_message(&self, content: &str) -> Result<(), ClawError>;
+}
+```
+
+**Message format:**
+```json
+{
+  "type": "user",
+  "message": {
+    "role": "user",
+    "content": [{"type": "text", "text": "..."}]
+  }
+}
+```
+
+**ResponseStream design:**
+- Wrap the message receiver from transport
+- Parse raw `Value` into typed `Message` structs
+- Handle control protocol messages internally (route to handlers)
+- Yield only user-facing messages (Assistant, Result, System)
+- Support async iteration via `Stream` trait
+
+### 4. Streaming Response Handling
+
+**New type:**
+```rust
+pub struct ResponseStream {
+    // Receiver for raw messages
+    rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>,
+
+    // Control protocol reference for routing control messages
+    control: Arc<ControlProtocol>,
+
+    // Stream state tracking
+    is_complete: bool,
+}
+```
+
+**Stream implementation:**
+```rust
+impl Stream for ResponseStream {
+    type Item = Result<Message, ClawError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>)
+        -> Poll<Option<Self::Item>>;
+}
+```
+
+**Message routing logic:**
+- `Message::ControlRequest` → Route to `control.handle_incoming()`
+- `Message::ControlResponse` → Route to `control.handle_response()`
+- `Message::Assistant/User/Result/System` → Yield to user
+- End of stream → Set `is_complete = true`
+
+### 5. Session Control Operations
+
+**Methods to implement:**
+
+```rust
+impl ClaudeClient {
+    /// Interrupt the current agent execution
+    pub async fn interrupt(&self) -> Result<(), ClawError>;
+
+    /// Change permission mode during session
+    pub async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), ClawError>;
+
+    /// Switch the active model during session
+    pub async fn set_model(&self, model: impl Into<String>) -> Result<(), ClawError>;
+
+    /// Query MCP server connection status
+    pub async fn mcp_status(&self) -> Result<serde_json::Value, ClawError>;
+
+    /// Rewind file state to a specific message
+    pub async fn rewind_files(&self, message_id: impl Into<String>) -> Result<(), ClawError>;
+}
+```
+
+**Implementation pattern:**
+```rust
+pub async fn interrupt(&self) -> Result<(), ClawError> {
+    let response = self.control.request(ControlRequest::Interrupt).await?;
+    match response {
+        ControlResponse::Success { .. } => Ok(()),
+        ControlResponse::Error { error, .. } => {
+            Err(ClawError::ControlError(format!("Interrupt failed: {}", error)))
+        }
     }
 }
 ```
 
-**Acceptance Criteria:** DefaultPermissionHandler with policy evaluation
+### 6. Handler Registration
 
-### 4. Hook Integration for Permission Events ❌
-**Location:** Modify `src/control/mod.rs` handle_incoming()
+**Methods to implement:**
 
-**Current Behavior:**
-- Can_use_tool requests go directly to CanUseToolHandler
-- No hook invocation for permission checks
+```rust
+impl ClaudeClient {
+    /// Register a handler for can_use_tool requests
+    pub async fn register_can_use_tool_handler(
+        &self,
+        handler: Arc<dyn CanUseToolHandler>,
+    );
 
-**Required Enhancement:**
-- Before invoking CanUseToolHandler, check for registered hooks
-- If hooks registered for PreToolUse event:
-  - Construct HookInput with tool_name and tool_input
-  - Invoke hook callbacks
-  - Process HookResponse.permission_decision
-  - Return early if hook denies or asks
-- If no hooks or hook allows, proceed to CanUseToolHandler
+    /// Register a hook callback
+    pub async fn register_hook(
+        &self,
+        hook_id: String,
+        handler: Arc<dyn HookHandler>,
+    );
 
-**Acceptance Criteria:** Hook integration for can_use_tool events
-
-### 5. Permission Configuration Builder ❌
-**Location:** Modify `src/options.rs` builder
-
-**Required Enhancement:**
-- Add builder methods for permission configuration:
-  - `.permission_mode(PermissionMode)`
-  - `.allowed_tools(Vec<String>)`
-  - `.disallowed_tools(Vec<String>)`
-  - `.permission_prompt_tool_allowlist(Vec<String>)`
-
-**Note:** Builder methods already exist (lines 451-462), but may need updates for new PermissionMode variants
-
-**Acceptance Criteria:** Builder pattern for permission configuration
-
-## Files to Create/Modify
-
-### New Files (2 files, ~400 lines)
-
-1. **`src/permissions/mod.rs`** (~150 lines)
-   - Module documentation with permission system overview
-   - Re-exports for public types
-   - Permission policy evaluation logic
-   - Integration with Hook system
-
-2. **`src/permissions/handler.rs`** (~250 lines)
-   - DefaultPermissionHandler struct
-   - CanUseToolHandler trait implementation
-   - Tool allowlist/denylist checking
-   - Hook callback invocation
-   - Default policy fallback
-   - Comprehensive unit tests (~100 lines)
-
-### Modified Files (5 files)
-
-3. **`src/options.rs`** (+20 lines)
-   - Update PermissionMode enum with Ask/Deny/Custom variants
-   - Update serialization to match CLI expectations
-   - Update to_cli_arg() method for new variants
-   - Add unit tests for new variants
-
-4. **`src/control/mod.rs`** (+50 lines)
-   - Modify handle_incoming() to invoke hooks before CanUseToolHandler
-   - Add HookInput construction for can_use_tool events
-   - Process HookResponse.permission_decision
-   - Update integration tests
-
-5. **`src/lib.rs`** (+5 lines)
-   - Add `pub mod permissions;` declaration
-   - Update prelude to export permission types
-
-6. **`src/hooks/response.rs`** (+30 lines)
-   - Add helper methods for permission-specific responses
-   - Add PermissionDecision conversion helpers
-   - Add unit tests for new methods
-
-7. **`Cargo.toml`** (no changes needed)
-   - All required dependencies already present
-
-### Test Files (integrated into module files)
-
-8. **`src/permissions/handler.rs` tests** (~100 lines)
-   - Test allowlist/denylist logic
-   - Test hook integration
-   - Test default policy fallback
-   - Test PermissionMode variants
-   - Test edge cases (empty lists, wildcards TODO)
-
-## Architecture
-
-### Permission Check Flow
-
-```
-CLI sends can_use_tool request
-          ↓
-ControlProtocol.handle_incoming()
-          ↓
-Check for PreToolUse hooks
-          ↓
-     [Hooks registered?]
-          ↓
-    YES         NO
-     ↓           ↓
-Invoke hooks → CanUseToolHandler.can_use_tool()
-     ↓               ↓
-HookResponse → DefaultPermissionHandler
-     ↓               ↓
-[permission_decision?]  [Check policy]
-     ↓               ↓
- Allow/Deny/Ask  Allow/Deny/Ask
-     ↓               ↓
-Send control_response to CLI
+    /// Register an MCP message handler
+    pub async fn register_mcp_message_handler(
+        &self,
+        handler: Arc<dyn McpMessageHandler>,
+    );
+}
 ```
 
-### Policy Evaluation Order (in DefaultPermissionHandler)
+**Implementation:** Delegate to `control.handlers()` and register on the ControlHandlers instance.
 
-1. **Explicit Deny** - Check disallowed_tools first (highest priority)
-2. **Explicit Allow** - Check allowed_tools second
-3. **Hook Decision** - Invoke registered hooks for custom logic
-4. **Default Policy** - Fall back to PermissionMode:
-   - `Allow` → Allow all tools
-   - `Deny` → Deny all tools
-   - `Ask` → Ask user for each tool
-   - `Custom` → Require hook (error if no hook)
-   - `Default/AcceptEdits/BypassPermissions/Plan` → Use CLI defaults
+## Architecture Design
 
-### Hook Integration Points
+### Ownership and Lifetimes
 
-**PreToolUse Event:**
-- Triggered before tool execution
-- HookInput contains tool_name and tool_input
-- HookResponse.permission_decision determines outcome
-- If hook denies, tool execution is blocked
-- If hook allows, proceed to CanUseToolHandler
-- If no hooks, proceed to CanUseToolHandler
+**Problem:** Transport's `messages()` method can only be called once (consumes the receiver).
 
-**Hook Priority:**
-- Hooks are checked BEFORE CanUseToolHandler
-- Multiple hooks can be registered (evaluated in order)
-- First hook that returns Deny or Ask wins
-- If all hooks Allow, proceed to handler
+**Solution (inspired by QueryStream):**
+1. ClaudeClient stores `Option<Receiver>` in Arc<Mutex<>>
+2. On `connect()`, call `transport.messages()` once and store
+3. `send_message()` takes receiver out of Option, wraps in ResponseStream
+4. ResponseStream owns the receiver for its lifetime
+5. When ResponseStream is dropped, client can't send more messages (session over)
+
+**Alternative approach:** Multiple message sending
+- Store receiver permanently in ClaudeClient
+- `send_message()` doesn't take ownership, just yields from shared receiver
+- All messages from CLI are routed through a single stream
+- Client needs internal task to continuously process messages
+
+**Recommendation:** Start with single-message approach (simpler), can extend later.
+
+### Message Routing
+
+```
+CLI stdout → Transport → UnboundedReceiver<Result<Value>>
+                              ↓
+                         ClaudeClient (routing)
+                              ↓
+                    ┌─────────┴──────────┐
+                    ↓                    ↓
+         Control Messages         User Messages
+         (ControlRequest,         (Assistant,
+          ControlResponse)         Result, etc.)
+                    ↓                    ↓
+            ControlProtocol          ResponseStream
+            (handle internally)      (yield to user)
+```
+
+### Concurrent Operations
+
+**Thread safety requirements:**
+- Multiple tasks can call control operations concurrently
+- ControlProtocol already handles concurrent requests (Arc + Mutex)
+- ResponseStream is single-consumer (one task polls it)
+- Transport write is thread-safe (Arc<dyn Transport>)
+
+## Files to Create
+
+### Primary Implementation
+
+**File:** `crates/rusty_claw/src/client.rs` (~500-700 lines)
+
+**Structure:**
+```rust
+//! ClaudeClient for interactive sessions with Claude CLI
+//!
+//! # Overview
+//! ...
+//!
+//! # Example
+//! ...
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio_stream::Stream;
+
+// ClaudeClient struct
+pub struct ClaudeClient { /* ... */ }
+
+// Session management methods
+impl ClaudeClient {
+    pub fn new() { /* ... */ }
+    pub async fn connect() { /* ... */ }
+    pub fn is_connected() { /* ... */ }
+    pub async fn close() { /* ... */ }
+}
+
+// Message sending methods
+impl ClaudeClient {
+    pub async fn send_message() { /* ... */ }
+    async fn write_message() { /* ... */ }
+}
+
+// Control operations
+impl ClaudeClient {
+    pub async fn interrupt() { /* ... */ }
+    pub async fn set_permission_mode() { /* ... */ }
+    pub async fn set_model() { /* ... */ }
+    pub async fn mcp_status() { /* ... */ }
+    pub async fn rewind_files() { /* ... */ }
+}
+
+// Handler registration
+impl ClaudeClient {
+    pub async fn register_can_use_tool_handler() { /* ... */ }
+    pub async fn register_hook() { /* ... */ }
+    pub async fn register_mcp_message_handler() { /* ... */ }
+}
+
+// ResponseStream struct
+pub struct ResponseStream { /* ... */ }
+
+impl Stream for ResponseStream {
+    type Item = Result<Message, ClawError>;
+    fn poll_next() { /* ... */ }
+}
+
+// Tests module
+#[cfg(test)]
+mod tests { /* ... */ }
+```
+
+### Modified Files
+
+**File:** `crates/rusty_claw/src/lib.rs` (+3 lines)
+
+Add module declaration and prelude export:
+```rust
+// Add after query module
+pub mod client;
+
+// Update prelude
+pub use crate::client::{ClaudeClient, ResponseStream};
+```
 
 ## Implementation Plan
 
-### Phase 1: Update PermissionMode Enum (30 min)
-- Add Ask/Deny/Custom variants to PermissionMode
-- Update serialization and to_cli_arg()
-- Add unit tests
-- **Files:** options.rs
+### Phase 1: Basic Structure (60 min)
 
-### Phase 2: Create Permissions Module (60 min)
-- Create src/permissions/ directory
-- Create mod.rs with module docs
-- Define DefaultPermissionHandler struct
-- Implement basic structure (no logic yet)
-- **Files:** permissions/mod.rs, permissions/handler.rs
+**Tasks:**
+1. Create `src/client.rs` with module docs
+2. Define `ClaudeClient` struct with all fields
+3. Define `ResponseStream` struct
+4. Implement `ClaudeClient::new()` (no connection yet)
+5. Implement `is_connected()` (check transport.is_ready())
+6. Add module to lib.rs and prelude
 
-### Phase 3: Implement Policy Logic (90 min)
-- Implement can_use_tool() in DefaultPermissionHandler
-- Add allowlist/denylist checking
-- Add default policy fallback
-- Add unit tests for policy logic
-- **Files:** permissions/handler.rs
+**Deliverable:** Compiles, struct is public and documented.
 
-### Phase 4: Hook Integration (60 min)
-- Modify handle_incoming() to invoke hooks
-- Construct HookInput for can_use_tool events
-- Process HookResponse.permission_decision
-- Update integration tests
-- **Files:** control/mod.rs
+### Phase 2: Session Management (90 min)
 
-### Phase 5: Response Helpers (30 min)
-- Add permission-specific helper methods to HookResponse
-- Add PermissionDecision conversion helpers
-- Add unit tests
-- **Files:** hooks/response.rs
+**Tasks:**
+1. Implement `ClaudeClient::connect()`
+   - Create SubprocessCLITransport
+   - Call transport.connect()
+   - Extract CLI args from options
+   - Create ControlProtocol
+   - Call control.initialize()
+   - Store message receiver in Arc<Mutex<Option<>>>
+2. Implement `ClaudeClient::close()`
+   - Call transport.end_input()
+   - Call transport.close()
+   - Set is_initialized to false
+3. Add basic unit tests for lifecycle
 
-### Phase 6: Module Integration (30 min)
-- Update lib.rs with permissions module
-- Update prelude to export types
-- Update Cargo.toml if needed (likely not)
-- **Files:** lib.rs
+**Deliverable:** Can create, connect, and close a client.
 
-### Phase 7: Testing (90 min)
-- Write comprehensive unit tests (~15-20 tests)
-- Write integration tests with Hook system
-- Test all PermissionMode variants
-- Test allowlist/denylist combinations
-- Test hook priority and decision flow
-- Verify no regressions in existing tests
-- **Files:** permissions/handler.rs, control/mod.rs
+### Phase 3: Message Sending (90 min)
 
-### Phase 8: Documentation & Verification (30 min)
-- Write module-level docs with examples
-- Write rustdoc for all public types
-- Run full test suite (cargo test)
-- Run clippy (cargo clippy)
-- Verify acceptance criteria
-- Update .attractor/ docs
-- **Files:** permissions/mod.rs, permissions/handler.rs
+**Tasks:**
+1. Implement `write_message()` helper
+   - Format user message JSON
+   - Serialize to bytes
+   - Call transport.write()
+2. Implement `send_message()`
+   - Check is_connected
+   - Call write_message()
+   - Take receiver from Arc<Mutex<Option<>>>
+   - Wrap in ResponseStream
+   - Return ResponseStream
+3. Add tests for message formatting
 
-**Total Estimated Time:** ~6.5 hours
+**Deliverable:** Can send messages and get response stream.
 
-## Success Criteria
+### Phase 4: Streaming Response Handling (120 min)
 
-### Acceptance Criteria (from task description)
+**Tasks:**
+1. Implement `ResponseStream` struct
+   - Store receiver and control reference
+   - Add is_complete flag
+2. Implement `Stream` trait for ResponseStream
+   - Poll receiver for next message
+   - Parse Value into Message
+   - Route control messages to ControlProtocol
+   - Yield user-facing messages
+   - Handle end of stream
+3. Add helper methods (is_complete(), etc.)
+4. Add comprehensive streaming tests
+   - Mock transport with canned responses
+   - Test control message routing
+   - Test user message yielding
+   - Test end of stream handling
 
-1. ✅ **PermissionMode enum** - Define permission check policies (Allow/Ask/Deny/Custom)
-2. ✅ **Tool allowlist** - Selective permission prompting with allowlist/denylist
-3. ✅ **can_use_tool callback handler** - Route permission checks through handlers
-4. ✅ **Hook integration** - Permission decisions through hooks with fallback
-5. ✅ **Default permission policy** - Fallback behavior based on PermissionMode
-6. ✅ **Comprehensive tests** - ~15-20 unit tests + integration tests with Hook system
-7. ✅ **Complete documentation** - Module-level docs with examples
+**Deliverable:** ResponseStream works correctly with message routing.
 
-### Quality Standards
+### Phase 5: Control Operations (60 min)
 
-- ✅ Zero compilation errors
-- ✅ Zero clippy warnings in new code
-- ✅ Zero test failures
-- ✅ Zero regressions in existing tests (126 unit + 44 doc tests)
-- ✅ 100% documentation coverage of public API
-- ✅ All doctests pass
+**Tasks:**
+1. Implement `interrupt()`
+2. Implement `set_permission_mode()`
+3. Implement `set_model()`
+4. Implement `mcp_status()`
+5. Implement `rewind_files()`
+6. Add unit tests for each operation
 
-## Dependencies
+**Deliverable:** All control operations work.
 
-**Completed Tasks (All Satisfied):**
-- ✅ rusty_claw-bip: Implement Hook system [P2] - **CLOSED**
+### Phase 6: Handler Registration (30 min)
 
-**Blocks Downstream Tasks:**
-- ○ rusty_claw-isy: Add integration tests [P2]
+**Tasks:**
+1. Implement `register_can_use_tool_handler()`
+2. Implement `register_hook()`
+3. Implement `register_mcp_message_handler()`
+4. Add tests for handler registration
 
-## Risks & Considerations
+**Deliverable:** Handlers can be registered.
 
-### 1. Breaking Changes
-**Risk:** Adding new PermissionMode variants might break existing code
-**Mitigation:** Keep existing variants unchanged, add new ones, update serialization carefully
+### Phase 7: Integration Tests (90 min)
 
-### 2. Hook Priority Logic
-**Risk:** Complex hook evaluation order could cause unexpected behavior
-**Mitigation:** Document hook priority clearly, add comprehensive tests, follow "first deny wins" rule
+**Tasks:**
+1. Create MockTransport for integration testing
+2. Test full session lifecycle (connect → send → receive → close)
+3. Test concurrent control operations
+4. Test error scenarios (connection failure, CLI error responses)
+5. Test handler invocation during streaming
+6. Test interrupted streams
+7. Test permission mode changes during session
 
-### 3. Default Policy Confusion
-**Risk:** Multiple permission sources (allowlist, hooks, mode) could confuse users
-**Mitigation:** Clear documentation of evaluation order, simple priority rules, examples for each case
+**Deliverable:** ~20-30 comprehensive tests.
 
-### 4. Performance
-**Risk:** Hook invocation on every tool use could add latency
-**Mitigation:** Async trait already in place, hooks are optional, allowlist checked first
+### Phase 8: Documentation & Polish (60 min)
 
-### 5. Backward Compatibility
-**Risk:** Existing CanUseToolHandler implementations might break
-**Mitigation:** DefaultPermissionHandler is opt-in, existing handlers still work, no API changes to trait
+**Tasks:**
+1. Write comprehensive module-level docs with examples
+2. Document all public structs, methods, and types
+3. Add usage examples showing:
+   - Basic session
+   - Streaming responses
+   - Control operations
+   - Handler registration
+4. Add doctests for key examples
+5. Run clippy and fix any warnings
+6. Run cargo doc and verify rendering
+7. Update README/docs with ClaudeClient info
 
-## Notes
+**Deliverable:** 100% documentation coverage, zero clippy warnings.
 
-- **Python SDK Reference:** Check claude-agent-sdk-python for permission patterns
-- **Hook System:** Already complete with PermissionDecision (Allow/Deny/Ask) ✅
-- **Control Protocol:** Already routes can_use_tool to handlers ✅
-- **Test Coverage:** Existing 126 unit + 44 doc tests must continue passing ✅
-- **Clippy:** Target zero warnings in new code ✅
+### Phase 9: Final Verification (30 min)
 
-## Open Questions
+**Tasks:**
+1. Run full test suite (cargo test)
+2. Verify no regressions in existing tests
+3. Check test coverage (aim for >90%)
+4. Run clippy in CI mode (treat warnings as errors)
+5. Verify thread safety (Send + Sync bounds)
+6. Test compile times (should be reasonable)
+7. Create final summary
 
-None - all architecture decisions clear from task description and existing code.
+**Deliverable:** Production-ready implementation.
 
----
+## Expected Outcomes
 
-**Status:** Ready for implementation (Phase 1)
-**Next Step:** Update PermissionMode enum with Ask/Deny/Custom variants
+### New Files (1 file, ~600-800 lines)
+
+1. **`crates/rusty_claw/src/client.rs`** (~600-800 lines)
+   - ClaudeClient struct (~100 lines)
+   - Session management methods (~150 lines)
+   - Message sending methods (~100 lines)
+   - Control operations (~100 lines)
+   - Handler registration (~50 lines)
+   - ResponseStream struct + Stream impl (~100 lines)
+   - Tests module (~200-300 lines)
+
+### Modified Files (1 file, +5 lines)
+
+2. **`crates/rusty_claw/src/lib.rs`** (+5 lines)
+   - Add `pub mod client;`
+   - Update prelude with `ClaudeClient` and `ResponseStream`
+
+### Test Coverage
+
+**Target:** 20-30 comprehensive tests
+- Unit tests: ~15 tests (lifecycle, message formatting, control ops)
+- Integration tests: ~10 tests (full session, concurrent ops, error handling)
+- Doctests: ~5 tests (usage examples)
+
+**Categories:**
+- Session lifecycle (connect, close, reconnect)
+- Message sending (single message, multiple messages)
+- Response streaming (delta updates, end of stream)
+- Control operations (interrupt, mode changes, model switch)
+- Handler registration (can_use_tool, hooks, MCP)
+- Error handling (connection failure, CLI errors, timeouts)
+- Concurrent operations (multiple control requests)
+- Thread safety (Send + Sync)
+
+### Documentation
+
+**Module-level docs:**
+- Overview of ClaudeClient purpose
+- Architecture explanation (vs query API)
+- Basic usage example
+- Advanced usage examples (streaming, control ops)
+
+**Struct/method docs:**
+- Complete API documentation
+- Examples for all public methods
+- Error documentation
+- Thread safety notes
+
+## Dependencies & Risks
+
+### External Dependencies
+
+**Already in Cargo.toml:**
+- `tokio` - Async runtime (Mutex, mpsc channels)
+- `tokio-stream` - Stream trait and utilities
+- `async-trait` - Async trait methods
+- `serde`, `serde_json` - Serialization
+- `uuid` - Request ID generation (via ControlProtocol)
+
+**No new dependencies needed.**
+
+### Integration Risks
+
+**Risk:** Message receiver can only be called once.
+**Mitigation:** Store in `Arc<Mutex<Option<>>>`, take out when needed. Document single-use behavior.
+
+**Risk:** Control message routing complexity.
+**Mitigation:** Route internally in ResponseStream.poll_next(). User never sees control messages.
+
+**Risk:** Concurrent access to session state.
+**Mitigation:** Use Arc<Mutex<>> for shared state. All operations are async-safe.
+
+**Risk:** Stream lifetime and ownership.
+**Mitigation:** Follow QueryStream pattern - ResponseStream owns what it needs.
+
+### Breaking Changes
+
+**None expected.** This is a new module with no impact on existing APIs.
+
+## Success Criteria (Acceptance Criteria)
+
+From task definition:
+
+1. ✅ **ClaudeClient struct** - Session management
+   - Maintains long-running session connection
+   - Configuration for model, system prompt, permission mode
+   - Thread-safe (Send + Sync)
+
+2. ✅ **Message sending** - Interactive messaging
+   - `send_message()` method that queues messages
+   - Support for streaming responses via Control Protocol
+   - Async API using tokio
+
+3. ✅ **Streaming responses** - Receive agent outputs
+   - Stream responses from the agent
+   - Support for delta updates (text/tool_use streaming)
+   - Handle end-of-stream signals
+
+4. ✅ **Session control** - Interrupt and mode changes
+   - `interrupt()` method to stop current streaming
+   - Change permission_mode during session
+   - Change model during session via control protocol
+
+5. ✅ **Integration with Control Protocol** - Use existing infrastructure
+   - Leverage rusty_claw-91n (ControlProtocolHandler)
+   - Use rusty_claw-sna patterns (query() function)
+   - Work with existing Transport and Message layers
+
+6. ✅ **Comprehensive tests**
+   - Unit tests for client operations
+   - Integration tests with mock control protocol
+   - Streaming response tests
+   - ~20-30 tests, zero clippy warnings
+
+7. ✅ **Complete documentation**
+   - Module-level docs with usage examples
+   - Examples showing session management and streaming
+   - API documentation for all public methods
+
+## Estimated Time
+
+**Total:** ~9.5 hours (570 minutes)
+
+**Breakdown by phase:**
+- Phase 1: Basic Structure - 60 min
+- Phase 2: Session Management - 90 min
+- Phase 3: Message Sending - 90 min
+- Phase 4: Streaming Response - 120 min
+- Phase 5: Control Operations - 60 min
+- Phase 6: Handler Registration - 30 min
+- Phase 7: Integration Tests - 90 min
+- Phase 8: Documentation - 60 min
+- Phase 9: Verification - 30 min
+
+**Notes:**
+- This is comprehensive implementation with thorough testing
+- Production-ready quality standards
+- No cutting corners on tests or documentation
+
+## Next Steps
+
+1. ✅ Investigation complete
+2. → Start Phase 1: Create basic structure
+3. → Iterate through phases 2-9
+4. → Final verification and close task
+
+## References
+
+**Python SDK:**
+- https://github.com/anthropics/claude-agent-sdk-python
+
+**Related tasks:**
+- rusty_claw-91n: Control Protocol handler (COMPLETE)
+- rusty_claw-sna: query() function (COMPLETE)
+
+**Downstream blockers:**
+- rusty_claw-isy: Add integration tests [P2]
+- rusty_claw-b4s: Implement subagent support [P3]
+- rusty_claw-bkm: Write examples [P3]

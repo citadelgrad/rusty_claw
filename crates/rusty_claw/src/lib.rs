@@ -69,6 +69,9 @@ pub mod query;
 /// Configuration options and builder
 pub mod options;
 
+/// Client for interactive sessions with Claude CLI
+pub mod client;
+
 // Public API re-exports
 pub use query::query;
 
@@ -91,4 +94,5 @@ pub mod prelude {
     pub use crate::permissions::DefaultPermissionHandler;
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
+    pub use crate::client::{ClaudeClient, ResponseStream};
 }
