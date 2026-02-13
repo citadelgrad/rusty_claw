@@ -463,7 +463,7 @@ mod tests {
     fn test_incoming_control_request_hook_callback() {
         let req = IncomingControlRequest::HookCallback {
             hook_id: "pre_commit".to_string(),
-            hook_event: HookEvent,
+            hook_event: crate::options::HookEvent::PreToolUse,
             hook_input: json!({ "tool": "Bash" }),
         };
 

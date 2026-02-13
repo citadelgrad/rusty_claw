@@ -395,7 +395,13 @@ mod tests {
     #[tokio::test]
     async fn test_hook_handler() {
         let handler = MockHookHandler;
-        let result = handler.call(HookEvent, json!({ "foo": "bar" })).await.unwrap();
+        let result = handler
+            .call(
+                crate::options::HookEvent::PreToolUse,
+                json!({ "foo": "bar" }),
+            )
+            .await
+            .unwrap();
         assert_eq!(result["echo"]["foo"], "bar");
     }
 

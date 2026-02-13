@@ -47,14 +47,12 @@ pub mod transport;
 pub mod control;
 
 /// Model Context Protocol (MCP) integration
-pub mod mcp {
-    //! MCP integration will be added in future tasks
-}
+///
+/// MCP integration will be added in future tasks
+pub mod mcp {}
 
 /// Hook system for lifecycle events
-pub mod hooks {
-    //! Hooks implementation will be added in future tasks
-}
+pub mod hooks;
 
 /// Error types and utilities
 pub mod error;
@@ -81,11 +79,12 @@ pub mod prelude {
     pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
     pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
+    pub use crate::hooks::{HookCallback, HookContext, HookInput, HookResponse, PermissionDecision};
     pub use crate::messages::{
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
-    pub use crate::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
+    pub use crate::options::{ClaudeAgentOptions, HookEvent, HookMatcher, PermissionMode, SystemPrompt};
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }

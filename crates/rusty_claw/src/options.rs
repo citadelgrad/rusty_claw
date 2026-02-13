@@ -85,13 +85,89 @@ pub struct SdkMcpServer {
     // Detailed implementation in future tasks (SPEC.md section 7.2)
 }
 
-/// Hook event type (placeholder for future hook tasks)
+/// Hook event type - triggers for lifecycle callbacks
+///
+/// # Examples
+///
+/// ```
+/// use rusty_claw::prelude::*;
+///
+/// let event = HookEvent::PreToolUse;
+/// assert_eq!(format!("{:?}", event), "PreToolUse");
+/// ```
 #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HookEvent;
+#[serde(rename_all = "PascalCase")]
+pub enum HookEvent {
+    /// Before a tool is invoked
+    PreToolUse,
+    /// After a tool successfully completes
+    PostToolUse,
+    /// After a tool fails
+    PostToolUseFailure,
+    /// When user submits a prompt
+    UserPromptSubmit,
+    /// When session stops
+    Stop,
+    /// When a subagent stops
+    SubagentStop,
+    /// When a subagent starts
+    SubagentStart,
+    /// Before conversation compaction
+    PreCompact,
+    /// System notification event
+    Notification,
+    /// Permission request from Claude
+    PermissionRequest,
+}
 
-/// Hook matcher (placeholder for future hook tasks)
+/// Hook matcher for pattern-based hook triggering
+///
+/// # Examples
+///
+/// ```
+/// use rusty_claw::prelude::*;
+///
+/// // Match all tools
+/// let matcher = HookMatcher::all();
+/// assert!(matcher.matches("Bash"));
+/// assert!(matcher.matches("Read"));
+///
+/// // Match specific tool
+/// let matcher = HookMatcher::tool("Bash");
+/// assert!(matcher.matches("Bash"));
+/// assert!(!matcher.matches("Read"));
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookMatcher;
+pub struct HookMatcher {
+    /// Tool name pattern to match (e.g., "Bash", "mcp__*", or None for all)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+impl HookMatcher {
+    /// Create a matcher that matches all tools
+    pub fn all() -> Self {
+        Self { tool_name: None }
+    }
+
+    /// Create a matcher for a specific tool name
+    pub fn tool(name: impl Into<String>) -> Self {
+        Self {
+            tool_name: Some(name.into()),
+        }
+    }
+
+    /// Check if this matcher matches the given tool name
+    pub fn matches(&self, tool_name: &str) -> bool {
+        match &self.tool_name {
+            None => true, // Match all
+            Some(pattern) => {
+                // Exact match for now. TODO: Add wildcard support (mcp__*)
+                pattern == tool_name
+            }
+        }
+    }
+}
 
 /// Agent definition for subagents (placeholder for future agent tasks)
 #[derive(Debug, Clone, Serialize, Deserialize)]

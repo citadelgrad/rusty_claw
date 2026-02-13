@@ -741,7 +741,7 @@ mod tests {
         // Handle incoming request
         let request = IncomingControlRequest::HookCallback {
             hook_id: "hook1".to_string(),
-            hook_event: HookEvent,
+            hook_event: crate::options::HookEvent::PreToolUse,
             hook_input: json!({ "test": "data" }),
         };
         control.handle_incoming("req_1", request).await;

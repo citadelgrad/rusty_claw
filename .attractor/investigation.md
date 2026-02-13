@@ -1,872 +1,520 @@
-# Investigation: rusty_claw-91n - Implement Control Protocol handler
+# Investigation: rusty_claw-bip - Implement Hook system
 
 ## Task Summary
 
-**ID:** rusty_claw-91n
-**Title:** Implement Control Protocol handler
-**Priority:** P1 (Critical)
+**ID:** rusty_claw-bip
+**Title:** Implement Hook system
+**Priority:** P2 (High)
 **Status:** in_progress
+**Owner:** Scott Nixon
 
-**Description:** Implement ControlProtocol struct with request/response routing, pending request tracking via oneshot channels, handler registration for can_use_tool/hook_callbacks/mcp_message, and the initialization handshake sequence.
+**Description:** Implement HookEvent enum, HookMatcher, HookCallback trait with blanket impl for closures, HookResponse with permission decisions, and hook invocation routing from control protocol callbacks.
 
 **Dependencies (All Completed ✓):**
-- ✓ rusty_claw-6cn: Implement Transport trait and SubprocessCLITransport [P1]
-- ✓ rusty_claw-dss: Implement ClaudeAgentOptions builder [P2]
+- ✓ rusty_claw-91n: Implement Control Protocol handler [P1]
 
 **Blocks (Downstream Tasks):**
-- ○ rusty_claw-bip: Implement Hook system [P2]
-- ○ rusty_claw-qrl: Implement ClaudeClient for interactive sessions [P2]
-- ○ rusty_claw-tlh: Implement SDK MCP Server bridge [P2]
+- ○ rusty_claw-s8q: Implement permission management [P2]
 
 ## Current State Analysis
 
-### What Exists
+### What Exists ✅
 
-**1. Transport Layer (✓ Complete)**
-- `src/transport/mod.rs` - Transport trait with async interface
-- `src/transport/subprocess.rs` - SubprocessCLITransport implementation
-- `src/transport/discovery.rs` - CLI discovery and version check
-- Full bidirectional NDJSON communication over stdio
-- Message receiver via `messages()` returning `UnboundedReceiver<Result<Value, ClawError>>`
+**1. Control Protocol (✓ Complete - from rusty_claw-91n)**
+- `src/control/mod.rs` - ControlProtocol with request/response routing
+- `src/control/messages.rs` - Control message types with serde
+- `src/control/handlers.rs` - Handler traits (CanUseToolHandler, HookHandler, McpMessageHandler)
+- `src/control/pending.rs` - Pending request tracking
+- Full integration with Control Protocol including `IncomingControlRequest::HookCallback`
 
-**2. Message Types (✓ Partial)**
-- `src/messages.rs` - Core message types:
-  - `Message` enum (System, Assistant, User, Result)
-  - `SystemMessage` enum (Init, CompactBoundary)
-  - `AssistantMessage`, `UserMessage`, `ResultMessage`
-  - `ContentBlock` enum (Text, ToolUse, ToolResult, Thinking)
-- ❌ **Missing:** Control protocol message types (`ControlRequest`, `ControlResponse`)
+**2. Control Handlers (✓ Partial)**
+- `HookHandler` trait exists in `src/control/handlers.rs`:
+  ```rust
+  #[async_trait]
+  pub trait HookHandler: Send + Sync {
+      async fn call(&self, hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError>;
+  }
+  ```
+- Handler registry in `ControlHandlers` with HashMap<String, Arc<dyn HookHandler>>
+- Registration method: `register_hook(hook_id: String, handler: Arc<dyn HookHandler>)`
 
-**3. Error Types (✓ Complete)**
-- `src/error.rs` - ClawError enum with variants:
-  - `CliNotFound`, `InvalidCliVersion`, `Connection`, `Process`
-  - `JsonDecode`, `MessageParse`, `ControlTimeout`, `ControlError`
-  - `Io`, `ToolExecution`
-- All error types needed for control protocol already exist
+**3. Placeholder Types (✓ Exist but minimal)**
+- `src/options.rs`:
+  - `HookEvent` - Currently a placeholder empty struct
+  - `HookMatcher` - Currently a placeholder empty struct
+- These are referenced in `control/messages.rs` for `Initialize` and `HookCallback` requests
 
-**4. Options (✓ Complete)**
-- `src/options.rs` - ClaudeAgentOptions with builder pattern
-  - System prompt, max_turns, model, tools, permissions
-  - MCP servers, hooks, agents (placeholder types)
-  - Session, environment, output settings
-  - `to_cli_args()` method for CLI argument conversion
+**4. Control Message Integration (✓ Complete)**
+- `IncomingControlRequest::HookCallback` variant exists with:
+  - `hook_id: String`
+  - `hook_event: HookEvent`
+  - `hook_input: Value`
+- `ControlRequest::Initialize` accepts `hooks: HashMap<HookEvent, Vec<HookMatcher>>`
 
-**5. Control Module (❌ Missing)**
-- `src/lib.rs` declares `pub mod control` as empty placeholder
-- ❌ **No implementation files exist**
+### What's Missing ❌
 
-### What's Missing
+**Critical Implementation Gaps:**
 
-**Critical Missing Files:**
+1. **HookEvent enum** (REPLACE in `src/options.rs`, ~50 lines)
+   - Currently: Empty placeholder struct
+   - Needed: Full enum with variants (PreToolUse, PostToolUse, etc.)
+   - Per SPEC.md Section 6.1:
+     ```rust
+     #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+     #[serde(rename_all = "PascalCase")]
+     pub enum HookEvent {
+         PreToolUse,
+         PostToolUse,
+         PostToolUseFailure,
+         UserPromptSubmit,
+         Stop,
+         SubagentStop,
+         SubagentStart,
+         PreCompact,
+         Notification,
+         PermissionRequest,
+     }
+     ```
 
-1. **`src/control/mod.rs`** (NEW FILE, ~200 lines)
-   - `ControlProtocol` struct
-   - Core request/response routing
-   - Module structure and re-exports
+2. **HookMatcher struct** (REPLACE in `src/options.rs`, ~40 lines)
+   - Currently: Empty placeholder struct
+   - Needed: Pattern matching for tool names
+   - Per SPEC.md Section 6.2:
+     ```rust
+     #[derive(Debug, Clone, Serialize, Deserialize)]
+     pub struct HookMatcher {
+         /// Tool name pattern to match (e.g., "Bash", "mcp__*")
+         #[serde(skip_serializing_if = "Option::is_none")]
+         pub tool_name: Option<String>,
+     }
+     ```
+   - Should support:
+     - Exact match: "Bash"
+     - Wildcard: "mcp__*"
+     - None (match all tools)
 
-2. **`src/control/messages.rs`** (NEW FILE, ~300 lines)
-   - `ControlRequest` enum (outgoing: initialize, interrupt, set_permission_mode, etc.)
-   - `ControlResponse` enum (success, error responses)
-   - `IncomingControlRequest` enum (incoming: can_use_tool, hook_callback, mcp_message)
-   - Serde serialization/deserialization
+3. **HookCallback trait with blanket impl** (NEW FILE `src/hooks/callback.rs`, ~80 lines)
+   - Trait definition with async call method
+   - Blanket impl for closures: `impl<F, Fut> HookCallback for F where F: Fn(...) -> Fut`
+   - Per SPEC.md Section 6.2:
+     ```rust
+     #[async_trait]
+     pub trait HookCallback: Send + Sync {
+         async fn call(
+             &self,
+             input: HookInput,
+             tool_use_id: Option<&str>,
+             context: &HookContext,
+         ) -> Result<HookResponse, ClawError>;
+     }
+     ```
 
-3. **`src/control/handlers.rs`** (NEW FILE, ~150 lines)
-   - `ControlHandlers` struct
-   - Handler traits: `CanUseToolHandler`, `HookHandler`, `McpMessageHandler`
-   - Handler registration system
+4. **HookInput and HookContext** (NEW FILE `src/hooks/types.rs`, ~60 lines)
+   - HookInput: Data passed to hooks (tool name, input, etc.)
+   - HookContext: Session context (tools, agents, etc.)
+   - Needs to be designed based on hook event types
 
-4. **`src/control/pending.rs`** (NEW FILE, ~100 lines)
-   - Pending request tracking with oneshot channels
-   - Request ID generation (UUID)
-   - Timeout handling
+5. **HookResponse struct** (NEW FILE `src/hooks/response.rs`, ~80 lines)
+   - Permission decisions (Allow/Deny/Ask)
+   - Additional context injection
+   - Tool input modification
+   - Per SPEC.md Section 6.3:
+     ```rust
+     #[derive(Debug, Clone, Default, Serialize)]
+     pub struct HookResponse {
+         #[serde(skip_serializing_if = "Option::is_none")]
+         pub permission_decision: Option<PermissionDecision>,
 
-**Minor Missing Pieces:**
+         #[serde(skip_serializing_if = "Option::is_none")]
+         pub permission_decision_reason: Option<String>,
 
-5. **`src/messages.rs`** (MODIFY, +30 lines)
-   - Add `ControlRequest` and `ControlResponse` variants to `Message` enum
-   - Update parsing logic
+         #[serde(skip_serializing_if = "Option::is_none")]
+         pub additional_context: Option<String>,
 
-6. **`src/lib.rs`** (MODIFY, +5 lines)
-   - Replace empty `control` module with `pub mod control;`
-   - Update prelude exports
+         #[serde(rename = "continue", default = "default_true")]
+         pub should_continue: bool,
+
+         #[serde(skip_serializing_if = "Option::is_none")]
+         pub updated_input: Option<serde_json::Value>,
+     }
+
+     #[derive(Debug, Clone, Serialize)]
+     #[serde(rename_all = "lowercase")]
+     pub enum PermissionDecision {
+         Allow,
+         Deny,
+         Ask,
+     }
+     ```
+
+6. **Hook invocation routing** (MODIFY `src/control/mod.rs`, +50 lines)
+   - Integrate hook dispatch with control protocol
+   - Route `IncomingControlRequest::HookCallback` to registered hooks
+   - Return `HookResponse` as `ControlResponse`
+   - Currently `HookHandler` trait exists but hook matching/routing logic is missing
+
+7. **Hooks module structure** (NEW FILE `src/hooks/mod.rs`, ~30 lines)
+   - Module organization and re-exports
+   - Public API surface
+   - Documentation with examples
 
 ## Design Analysis
 
-### Architecture Overview (from SPEC.md Section 4)
+### Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      ControlProtocol                        │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │               Request/Response Router                │  │
-│  │  - request() sends and awaits response              │  │
-│  │  - handle_incoming() routes to handlers             │  │
-│  └─────────────────────────────────────────────────────┘  │
-│                          ↕                                  │
-│  ┌──────────────────────┐      ┌─────────────────────┐   │
-│  │  Pending Requests     │      │   Handlers          │   │
-│  │  HashMap<String,      │      │   CanUseTool        │   │
-│  │    oneshot::Sender>   │      │   HookCallbacks     │   │
-│  │                       │      │   McpMessage        │   │
-│  └──────────────────────┘      └─────────────────────┘   │
-│                          ↕                                  │
-│  ┌─────────────────────────────────────────────────────┐  │
-│  │              Transport (Arc<dyn Transport>)         │  │
-│  │  - write() sends messages to CLI stdin             │  │
-│  │  - messages() receives from CLI stdout             │  │
-│  └─────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Hooks Module                            │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │                  HookEvent Enum                           │ │
+│  │  PreToolUse, PostToolUse, PostToolUseFailure,            │ │
+│  │  UserPromptSubmit, Stop, SubagentStop, etc.              │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                             ↓                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │                  HookMatcher                              │ │
+│  │  Pattern matching: tool_name (exact, wildcard, None)     │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                             ↓                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │                  HookCallback Trait                       │ │
+│  │  async fn call(input, tool_use_id, context) -> Response  │ │
+│  │  + Blanket impl for Fn closures                          │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                             ↓                                   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │                  HookResponse                             │ │
+│  │  Permission decision (Allow/Deny/Ask)                    │ │
+│  │  Additional context, updated input, continue flag        │ │
+│  └───────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                             ↕
+┌─────────────────────────────────────────────────────────────────┐
+│                  Control Protocol Handler                       │
+│  IncomingControlRequest::HookCallback                          │
+│  → Dispatch to HookHandler via registry                        │
+│  → Return HookResponse as ControlResponse                      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Design Patterns
 
-**1. Request/Response Routing (SPEC.md 4.2)**
-- Outgoing: `request()` generates UUID, inserts oneshot sender, writes message
-- Incoming: Background task reads messages, routes `control_response` to pending sender
-- Timeout: 30-second default with `tokio::time::timeout`
+**1. Hook Event Types (SPEC.md 6.1)**
+- Enum with PascalCase serialization
+- Hash + Eq + PartialEq for HashMap keys
+- Comprehensive set of lifecycle events:
+  - Tool lifecycle: PreToolUse, PostToolUse, PostToolUseFailure
+  - User interaction: UserPromptSubmit
+  - Session control: Stop, SubagentStop, SubagentStart
+  - System events: PreCompact, Notification, PermissionRequest
 
-**2. Pending Request Tracking**
+**2. Hook Matching (SPEC.md 6.2)**
+- Flexible pattern matching:
+  - `tool_name: None` → Match all tools
+  - `tool_name: Some("Bash")` → Exact match
+  - `tool_name: Some("mcp__*")` → Wildcard (future enhancement)
+- Multiple matchers per event in `HashMap<HookEvent, Vec<HookMatcher>>`
+
+**3. Closure Support (SPEC.md 13.1)**
+- Blanket trait impl for ergonomics:
+  ```rust
+  impl<F, Fut> HookCallback for F
+  where
+      F: Fn(HookInput, Option<&str>, &HookContext) -> Fut + Send + Sync,
+      Fut: Future<Output = Result<HookResponse, ClawError>> + Send,
+  {
+      async fn call(&self, input: HookInput, tool_use_id: Option<&str>, context: &HookContext)
+          -> Result<HookResponse, ClawError>
+      {
+          self(input, tool_use_id, context).await
+      }
+  }
+  ```
+- Allows both trait objects and closures as callbacks
+
+**4. Permission Decisions (SPEC.md 6.3)**
+- Three-way decision: Allow, Deny, Ask
+- Optional reason for user-facing messages
+- Additional context injection for Claude
+- Tool input transformation
+- Continue flag for hook chaining
+
+**5. Integration with Control Protocol**
+- `HookHandler` trait already exists in control/handlers.rs
+- Need to:
+  1. Update `HookHandler::call` signature to match new types
+  2. Implement hook matching in control protocol handler
+  3. Convert `HookResponse` to `ControlResponse::Success`
+
+### Implementation Strategy
+
+**Phase 1: Core Types (90 min)**
+1. Replace `HookEvent` placeholder with full enum (~20 min)
+2. Replace `HookMatcher` placeholder with full struct (~20 min)
+3. Implement `HookInput` and `HookContext` (~30 min)
+4. Implement `HookResponse` and `PermissionDecision` (~20 min)
+
+**Phase 2: Callback Trait (60 min)**
+1. Define `HookCallback` trait in hooks module (~15 min)
+2. Implement blanket impl for closures (~30 min)
+3. Update `HookHandler` in control/handlers.rs (~15 min)
+
+**Phase 3: Hook Matching (45 min)**
+1. Implement matcher logic (exact match, wildcard) (~30 min)
+2. Unit tests for pattern matching (~15 min)
+
+**Phase 4: Control Integration (60 min)**
+1. Update control protocol hook dispatch (~30 min)
+2. Convert HookResponse to ControlResponse (~15 min)
+3. Integration tests (~15 min)
+
+**Phase 5: Module Structure (30 min)**
+1. Create hooks/mod.rs with re-exports (~10 min)
+2. Update lib.rs prelude (~5 min)
+3. Module-level documentation (~15 min)
+
+**Phase 6: Documentation (45 min)**
+1. Doctests for all public types (~20 min)
+2. Usage examples in module docs (~15 min)
+3. Architecture documentation (~10 min)
+
+**Phase 7: Testing (90 min)**
+1. Unit tests for all types (~30 min)
+2. Integration tests with control protocol (~30 min)
+3. Closure blanket impl tests (~15 min)
+4. Pattern matching tests (~15 min)
+
+**Phase 8: Verification (30 min)**
+1. Run full test suite (~10 min)
+2. Clippy checks (~5 min)
+3. Documentation coverage (~5 min)
+4. Acceptance criteria checklist (~10 min)
+
+**Total Estimated Time: 7.5 hours**
+
+## Files to Create/Modify
+
+### New Files (6 files, ~350 lines)
+
+1. **`src/hooks/mod.rs`** (~50 lines)
+   - Module structure and re-exports
+   - Public API documentation
+   - Examples
+
+2. **`src/hooks/callback.rs`** (~80 lines)
+   - `HookCallback` trait definition
+   - Blanket impl for closures
+   - Documentation with examples
+
+3. **`src/hooks/types.rs`** (~70 lines)
+   - `HookInput` struct
+   - `HookContext` struct
+   - Helper methods
+
+4. **`src/hooks/response.rs`** (~80 lines)
+   - `HookResponse` struct
+   - `PermissionDecision` enum
+   - Builder pattern helpers
+
+5. **`src/hooks/matcher.rs`** (~70 lines)
+   - Pattern matching logic
+   - Wildcard support
+   - Unit tests
+
+### Modified Files (4 files)
+
+6. **`src/options.rs`** (REPLACE ~50 lines)
+   - Replace `HookEvent` placeholder → full enum
+   - Replace `HookMatcher` placeholder → move to hooks module
+   - Import from hooks module
+
+7. **`src/control/handlers.rs`** (MODIFY +15 lines)
+   - Update `HookHandler::call` signature to use new types
+   - Update tests to use new types
+
+8. **`src/control/mod.rs`** (MODIFY +50 lines)
+   - Implement hook matching in `handle_incoming`
+   - Route to appropriate hook based on event + matcher
+   - Convert HookResponse to ControlResponse
+
+9. **`src/lib.rs`** (MODIFY +10 lines)
+   - Replace empty `hooks` module with real implementation
+   - Update prelude with hook types
+
+## Required Changes - Detailed
+
+### 1. Replace HookEvent in options.rs
+
+**Current (line 88-90):**
 ```rust
-pending: Arc<Mutex<HashMap<String, oneshot::Sender<ControlResponse>>>>
+/// Hook event type (placeholder for future hook tasks)
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HookEvent;
 ```
-- Key: request_id (UUID string)
-- Value: oneshot sender for response
-- Cleanup: Sender dropped on timeout or error
 
-**3. Handler Registration**
+**New:**
 ```rust
-struct ControlHandlers {
-    can_use_tool: Option<Box<dyn CanUseToolHandler>>,
-    hook_callbacks: HashMap<String, Box<dyn HookHandler>>,
-    mcp_message: Option<Box<dyn McpMessageHandler>>,
+/// Hook event type - triggers for lifecycle callbacks
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum HookEvent {
+    PreToolUse,
+    PostToolUse,
+    PostToolUseFailure,
+    UserPromptSubmit,
+    Stop,
+    SubagentStop,
+    SubagentStart,
+    PreCompact,
+    Notification,
+    PermissionRequest,
 }
 ```
-- Dynamic registration via `register_*()` methods
-- Async trait handlers for extensibility
-- Option/HashMap for optional handlers
 
-**4. Initialization Handshake (SPEC.md 4.4)**
-```
-1. SDK spawns CLI with --input-format=stream-json
-2. SDK sends: control_request { subtype: "initialize", hooks: {...}, agents: {...}, ... }
-3. CLI responds: control_response { subtype: "success", ... }
-4. CLI sends: system message { subtype: "init", session_id: "...", tools: [...] }
-5. SDK sends prompt via stdin (or control_request for client mode)
-6. CLI begins processing and streaming messages back
-```
+### 2. Replace HookMatcher in options.rs
 
-### Message Flow
-
-**Outgoing Request (SDK → CLI):**
+**Current (line 92-94):**
 ```rust
-pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError> {
-    let id = Uuid::new_v4().to_string();
-    let (tx, rx) = oneshot::channel();
-    self.pending.lock().await.insert(id.clone(), tx);
+/// Hook matcher (placeholder for future hook tasks)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookMatcher;
+```
 
-    let msg = json!({
-        "type": "control_request",
-        "request_id": id,
-        "request": request,
-    });
-    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
-
-    let response = tokio::time::timeout(Duration::from_secs(30), rx).await??;
-    Ok(response)
+**New:**
+```rust
+/// Hook matcher for pattern-based hook triggering
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HookMatcher {
+    /// Tool name pattern to match (e.g., "Bash", "mcp__*", or None for all)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
 }
-```
 
-**Incoming Request (CLI → SDK):**
-```rust
-pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest) {
-    let response = match request {
-        IncomingControlRequest::CanUseTool { tool_name, tool_input } => {
-            if let Some(handler) = &self.handlers.lock().await.can_use_tool {
-                handler.can_use_tool(&tool_name, &tool_input).await
-            } else {
-                // Default: allow all tools
-                Ok(ControlResponse::Success { ... })
+impl HookMatcher {
+    /// Create a matcher that matches all tools
+    pub fn all() -> Self {
+        Self { tool_name: None }
+    }
+
+    /// Create a matcher for a specific tool name
+    pub fn tool(name: impl Into<String>) -> Self {
+        Self { tool_name: Some(name.into()) }
+    }
+
+    /// Check if this matcher matches the given tool name
+    pub fn matches(&self, tool_name: &str) -> bool {
+        match &self.tool_name {
+            None => true,  // Match all
+            Some(pattern) => {
+                // TODO: Add wildcard support (mcp__*)
+                pattern == tool_name
             }
         }
-        // ... other handlers
-    };
-
-    let msg = json!({
-        "type": "control_response",
-        "request_id": request_id,
-        "response": response,
-    });
-    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
+    }
 }
 ```
 
-## Implementation Plan
+### 3. Update HookHandler in control/handlers.rs
 
-### Phase 1: Control Message Types (~90 minutes)
-
-**File: `src/control/messages.rs`**
-
-1. **Outgoing Control Requests (SDK → CLI)**
+**Current signature (line 129-141):**
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "subtype", rename_all = "snake_case")]
-pub enum ControlRequest {
-    Initialize {
-        #[serde(skip_serializing_if = "HashMap::is_empty")]
-        hooks: HashMap<HookEvent, Vec<HookMatcher>>,
-        #[serde(skip_serializing_if = "HashMap::is_empty")]
-        agents: HashMap<String, AgentDefinition>,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        sdk_mcp_servers: Vec<SdkMcpServer>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        permissions: Option<PermissionMode>,
-        can_use_tool: bool,
-    },
-    Interrupt,
-    SetPermissionMode { mode: String },
-    SetModel { model: String },
-    McpStatus,
-    RewindFiles { message_id: String },
-}
-```
-
-2. **Control Responses (CLI → SDK, SDK → CLI)**
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "subtype", rename_all = "snake_case")]
-pub enum ControlResponse {
-    Success {
-        #[serde(flatten)]
-        data: serde_json::Value,
-    },
-    Error {
-        error: String,
-        #[serde(flatten)]
-        extra: serde_json::Value,
-    },
-}
-```
-
-3. **Incoming Control Requests (CLI → SDK)**
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "subtype", rename_all = "snake_case")]
-pub enum IncomingControlRequest {
-    CanUseTool {
-        tool_name: String,
-        tool_input: serde_json::Value,
-    },
-    HookCallback {
-        hook_id: String,
-        hook_event: HookEvent,
-        hook_input: serde_json::Value,
-    },
-    McpMessage {
-        server_name: String,
-        message: serde_json::Value, // JSON-RPC
-    },
-}
-```
-
-**Tests:**
-- Serialization/deserialization for all message types
-- Round-trip tests (serialize → deserialize → compare)
-- Edge cases (empty fields, missing optionals)
-
-### Phase 2: Handler Traits and Registration (~60 minutes)
-
-**File: `src/control/handlers.rs`**
-
-1. **Handler Traits**
-```rust
-#[async_trait]
-pub trait CanUseToolHandler: Send + Sync {
-    async fn can_use_tool(
-        &self,
-        tool_name: &str,
-        tool_input: &serde_json::Value,
-    ) -> Result<bool, ClawError>;
-}
-
 #[async_trait]
 pub trait HookHandler: Send + Sync {
-    async fn call(
-        &self,
-        hook_event: HookEvent,
-        hook_input: serde_json::Value,
-    ) -> Result<serde_json::Value, ClawError>;
-}
-
-#[async_trait]
-pub trait McpMessageHandler: Send + Sync {
-    async fn handle(
-        &self,
-        server_name: &str,
-        message: serde_json::Value,
-    ) -> Result<serde_json::Value, ClawError>;
+    async fn call(&self, hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError>;
 }
 ```
 
-2. **Handler Registry**
+**Keep as-is** - This signature is fine for control protocol integration. The new `HookCallback` trait in the hooks module will have the richer signature, and we'll bridge between them.
+
+### 4. Add hook invocation in control/mod.rs
+
+**Location:** In `handle_incoming` method (needs to be created/updated)
+
+**Add:**
 ```rust
-pub struct ControlHandlers {
-    can_use_tool: Option<Arc<dyn CanUseToolHandler>>,
-    hook_callbacks: HashMap<String, Arc<dyn HookHandler>>,
-    mcp_message: Option<Arc<dyn McpMessageHandler>>,
-}
+async fn dispatch_hook(&self, hook_id: &str, hook_event: HookEvent, hook_input: Value)
+    -> Result<ControlResponse, ClawError>
+{
+    let handlers = self.handlers.lock().await;
 
-impl ControlHandlers {
-    pub fn new() -> Self { ... }
-    pub fn register_can_use_tool(&mut self, handler: Arc<dyn CanUseToolHandler>) { ... }
-    pub fn register_hook(&mut self, hook_id: String, handler: Arc<dyn HookHandler>) { ... }
-    pub fn register_mcp_message(&mut self, handler: Arc<dyn McpMessageHandler>) { ... }
-}
-```
-
-**Tests:**
-- Mock handlers for testing
-- Registration and retrieval
-- Multiple hook registration
-
-### Phase 3: Pending Request Tracking (~45 minutes)
-
-**File: `src/control/pending.rs`**
-
-1. **Pending Request Manager**
-```rust
-pub struct PendingRequests {
-    inner: Arc<Mutex<HashMap<String, oneshot::Sender<ControlResponse>>>>,
-}
-
-impl PendingRequests {
-    pub fn new() -> Self { ... }
-
-    pub async fn insert(&self, id: String, sender: oneshot::Sender<ControlResponse>) {
-        self.inner.lock().await.insert(id, sender);
-    }
-
-    pub async fn complete(&self, id: &str, response: ControlResponse) -> bool {
-        if let Some(sender) = self.inner.lock().await.remove(id) {
-            sender.send(response).is_ok()
-        } else {
-            false
-        }
-    }
-
-    pub async fn cancel(&self, id: &str) {
-        self.inner.lock().await.remove(id);
+    if let Some(handler) = handlers.hook_callbacks.get(hook_id) {
+        let result = handler.call(hook_event, hook_input).await?;
+        Ok(ControlResponse::Success { result })
+    } else {
+        Err(ClawError::ControlError(format!("No handler for hook_id: {}", hook_id)))
     }
 }
 ```
-
-**Tests:**
-- Insert and complete
-- Cancel (timeout simulation)
-- Multiple pending requests
-- Concurrent access
-
-### Phase 4: ControlProtocol Core (~90 minutes)
-
-**File: `src/control/mod.rs`**
-
-1. **Main Struct**
-```rust
-pub struct ControlProtocol {
-    transport: Arc<dyn Transport>,
-    pending: PendingRequests,
-    handlers: Arc<Mutex<ControlHandlers>>,
-}
-
-impl ControlProtocol {
-    pub fn new(transport: Arc<dyn Transport>) -> Self {
-        Self {
-            transport,
-            pending: PendingRequests::new(),
-            handlers: Arc::new(Mutex::new(ControlHandlers::new())),
-        }
-    }
-}
-```
-
-2. **Request Method (SDK → CLI)**
-```rust
-pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError> {
-    let id = Uuid::new_v4().to_string();
-    let (tx, rx) = oneshot::channel();
-    self.pending.insert(id.clone(), tx).await;
-
-    let msg = json!({
-        "type": "control_request",
-        "request_id": id,
-        "request": request,
-    });
-    self.transport.write(serde_json::to_vec(&msg)?.as_slice()).await?;
-
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(response)) => Ok(response),
-        Ok(Err(_)) => Err(ClawError::ControlError("channel closed".to_string())),
-        Err(_) => {
-            self.pending.cancel(&id).await;
-            Err(ClawError::ControlTimeout { subtype: "control_request".to_string() })
-        }
-    }
-}
-```
-
-3. **Response Handler (CLI → SDK)**
-```rust
-pub async fn handle_response(&self, request_id: &str, response: ControlResponse) {
-    self.pending.complete(request_id, response).await;
-}
-```
-
-4. **Incoming Request Handler (CLI → SDK)**
-```rust
-pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest) {
-    let response = match request {
-        IncomingControlRequest::CanUseTool { tool_name, tool_input } => {
-            let handlers = self.handlers.lock().await;
-            if let Some(handler) = &handlers.can_use_tool {
-                match handler.can_use_tool(&tool_name, &tool_input).await {
-                    Ok(allowed) => ControlResponse::Success {
-                        data: json!({ "allowed": allowed }),
-                    },
-                    Err(e) => ControlResponse::Error {
-                        error: e.to_string(),
-                        extra: json!({}),
-                    },
-                }
-            } else {
-                // Default: allow all tools
-                ControlResponse::Success {
-                    data: json!({ "allowed": true }),
-                }
-            }
-        }
-        IncomingControlRequest::HookCallback { hook_id, hook_event, hook_input } => {
-            let handlers = self.handlers.lock().await;
-            if let Some(handler) = handlers.hook_callbacks.get(&hook_id) {
-                match handler.call(hook_event, hook_input).await {
-                    Ok(result) => ControlResponse::Success { data: result },
-                    Err(e) => ControlResponse::Error {
-                        error: e.to_string(),
-                        extra: json!({}),
-                    },
-                }
-            } else {
-                ControlResponse::Error {
-                    error: format!("No handler for hook_id: {}", hook_id),
-                    extra: json!({}),
-                }
-            }
-        }
-        IncomingControlRequest::McpMessage { server_name, message } => {
-            let handlers = self.handlers.lock().await;
-            if let Some(handler) = &handlers.mcp_message {
-                match handler.handle(&server_name, message).await {
-                    Ok(result) => ControlResponse::Success { data: result },
-                    Err(e) => ControlResponse::Error {
-                        error: e.to_string(),
-                        extra: json!({}),
-                    },
-                }
-            } else {
-                ControlResponse::Error {
-                    error: format!("No MCP message handler registered"),
-                    extra: json!({}),
-                }
-            }
-        }
-    };
-
-    let msg = json!({
-        "type": "control_response",
-        "request_id": request_id,
-        "response": response,
-    });
-    if let Err(e) = self.transport.write(serde_json::to_vec(&msg).unwrap().as_slice()).await {
-        eprintln!("Failed to send control response: {}", e);
-    }
-}
-```
-
-**Tests:**
-- Request/response round-trip with mock transport
-- Timeout handling
-- Concurrent requests
-- Handler dispatch
-
-### Phase 5: Initialization Handshake (~60 minutes)
-
-**File: `src/control/mod.rs` (additions)**
-
-```rust
-impl ControlProtocol {
-    pub async fn initialize(&self, options: &ClaudeAgentOptions) -> Result<(), ClawError> {
-        let request = ControlRequest::Initialize {
-            hooks: options.hooks.clone(),
-            agents: options.agents.clone(),
-            sdk_mcp_servers: options.sdk_mcp_servers.clone(),
-            permissions: options.permission_mode.clone(),
-            can_use_tool: true, // Enable can_use_tool callbacks
-        };
-
-        match self.request(request).await? {
-            ControlResponse::Success { .. } => Ok(()),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!("Initialization failed: {}", error)))
-            }
-        }
-    }
-}
-```
-
-**Tests:**
-- Successful initialization
-- Initialization failure handling
-- Options conversion
-
-### Phase 6: Message Integration (~45 minutes)
-
-**File: `src/messages.rs` (modifications)**
-
-1. **Add Control Message Variants**
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Message {
-    System(SystemMessage),
-    Assistant(AssistantMessage),
-    User(UserMessage),
-    Result(ResultMessage),
-    ControlRequest {
-        request_id: String,
-        #[serde(flatten)]
-        request: ControlRequest,
-    },
-    ControlResponse {
-        request_id: String,
-        #[serde(flatten)]
-        response: ControlResponse,
-    },
-}
-```
-
-**Tests:**
-- Parsing control_request and control_response messages
-- Round-trip serialization
-
-### Phase 7: Integration Tests (~60 minutes)
-
-**File: `src/control/tests.rs`**
-
-1. **Mock Transport**
-```rust
-struct MockTransport {
-    sent: Arc<Mutex<Vec<String>>>,
-    receiver: Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>,
-    sender: mpsc::UnboundedSender<Result<Value, ClawError>>,
-}
-```
-
-2. **Full Flow Tests**
-- Initialize handshake
-- Request/response with mock CLI
-- Incoming request handling
-- Error scenarios (timeout, parse error, handler error)
-- Concurrent request handling
-
-### Phase 8: Documentation & Polish (~30 minutes)
-
-1. **Module Documentation**
-   - Overview and architecture
-   - Usage examples
-   - Handler registration examples
-
-2. **Public API Documentation**
-   - All public methods
-   - Error conditions
-   - Thread safety guarantees
-
-## Files to Modify/Create
-
-### New Files (4 files, ~750 lines total)
-
-1. **`src/control/mod.rs`** (~200 lines)
-   - ControlProtocol struct
-   - request(), handle_response(), handle_incoming() methods
-   - initialize() handshake method
-   - Module structure and re-exports
-
-2. **`src/control/messages.rs`** (~300 lines)
-   - ControlRequest enum (6 variants)
-   - ControlResponse enum (2 variants)
-   - IncomingControlRequest enum (3 variants)
-   - Serde implementations
-   - Tests (~100 lines)
-
-3. **`src/control/handlers.rs`** (~150 lines)
-   - CanUseToolHandler trait
-   - HookHandler trait
-   - McpMessageHandler trait
-   - ControlHandlers registry struct
-   - Tests (~50 lines)
-
-4. **`src/control/pending.rs`** (~100 lines)
-   - PendingRequests struct
-   - insert(), complete(), cancel() methods
-   - Tests (~30 lines)
-
-### Modified Files (3 files, ~50 lines changed)
-
-5. **`src/lib.rs`** (~5 lines changed)
-   - Replace empty `control` module with `pub mod control;`
-   - Update prelude exports:
-     ```rust
-     pub use crate::control::{ControlProtocol, ControlRequest, ControlResponse};
-     ```
-
-6. **`src/messages.rs`** (~30 lines changed)
-   - Add ControlRequest and ControlResponse variants to Message enum
-   - Update parsing and serialization tests
-
-7. **`Cargo.toml`** (~15 lines changed)
-   - Add dependencies:
-     - `uuid = { version = "1.11", features = ["v4", "serde"] }`
-     - (other dependencies already present: tokio, serde, serde_json, async-trait)
-
-## Dependencies
-
-### New Dependencies Required
-
-```toml
-[dependencies]
-uuid = { version = "1.11", features = ["v4", "serde"] }
-```
-
-### Existing Dependencies (Already Available)
-
-- `tokio` - async runtime, channels (oneshot, mpsc)
-- `serde` / `serde_json` - serialization
-- `async-trait` - async trait support
-- `thiserror` - error handling
 
 ## Risks & Mitigations
 
 ### 🟢 Low Risk
-
-1. **Message Serialization**
-   - Risk: JSON format mismatch with CLI
-   - Mitigation: Comprehensive unit tests, follow SPEC.md exactly
-   - Testing: Round-trip ser/de tests for all message types
-
-2. **Handler Traits**
-   - Risk: Trait design too rigid or too flexible
-   - Mitigation: Follow Python SDK patterns, async-trait for flexibility
-   - Testing: Mock handlers in tests
+- **Type definitions** - Straightforward enums/structs from SPEC
+  - Mitigation: Follow SPEC.md exactly, comprehensive serde tests
 
 ### 🟡 Medium Risk
+- **Closure blanket impl** - Complex generic constraints
+  - Mitigation: Reference existing async-trait patterns, thorough testing
+  - Test with both trait objects and closures
 
-1. **Pending Request Cleanup**
-   - Risk: Memory leak from abandoned requests
-   - Mitigation: Timeout removes pending entry, explicit cancel on drop
-   - Testing: Timeout tests, concurrent request tests
-
-2. **Handler Dispatch Errors**
-   - Risk: Unhandled errors crash process
-   - Mitigation: Catch all errors, return ControlResponse::Error
-   - Testing: Error propagation tests
-
-3. **Concurrency Issues**
-   - Risk: Race conditions in pending/handlers maps
-   - Mitigation: Arc<Mutex<...>> for all shared state
-   - Testing: Concurrent access tests with tokio::spawn
+- **Hook matching logic** - Wildcard support complexity
+  - Mitigation: Start with exact matching, defer wildcards to future enhancement
+  - Document limitation clearly
 
 ### 🔴 High Risk
+- **Control protocol integration** - Bridge between two handler traits
+  - Mitigation: Careful signature design, integration tests
+  - Keep HookHandler simple for control protocol
+  - Add richer HookCallback in hooks module for SDK users
 
-1. **Initialization Handshake Timing**
-   - Risk: Race between initialize request and system init message
-   - Mitigation: Wait for ControlResponse::Success before proceeding
-   - Testing: Integration tests with mock transport, sequence verification
+- **HookInput/HookContext design** - No clear spec
+  - Mitigation: Start minimal, extend as needed
+  - Make fields optional for forward compatibility
 
-2. **Backward Compatibility**
-   - Risk: Breaking changes to Message enum affect existing code
-   - Mitigation: Add variants, don't modify existing ones
-   - Testing: All 73 existing tests must pass
+## Success Criteria
 
-## Testing Strategy
+✅ **Acceptance Criteria from Task:**
 
-### Unit Tests (~200 lines)
+1. **HookEvent enum** - Define events that can trigger hooks
+2. **HookMatcher** - Pattern matching for hook triggers
+3. **HookCallback trait** with blanket impl for closures
+4. **HookResponse** with permission decisions
+5. **Hook invocation routing** from control protocol callbacks
+6. **Comprehensive tests** (~20 unit tests + integration)
+7. **Complete documentation** with examples
 
-**Messages (`control/messages.rs`):**
-- ✅ Serialize/deserialize ControlRequest variants
-- ✅ Serialize/deserialize ControlResponse variants
-- ✅ Serialize/deserialize IncomingControlRequest variants
-- ✅ Round-trip tests
-- ✅ Missing optional fields
+✅ **Technical Requirements:**
 
-**Handlers (`control/handlers.rs`):**
-- ✅ Mock handler implementations
-- ✅ Handler registration
-- ✅ Multiple hooks registration
+- All 141 existing tests continue to pass (no regressions)
+- 0 clippy warnings in new hook code
+- 100% documentation coverage of public API
+- Clean compilation under 5 seconds
+- Integration with control protocol tested
 
-**Pending (`control/pending.rs`):**
-- ✅ Insert and complete
-- ✅ Cancel (timeout)
-- ✅ Concurrent access
+✅ **Code Quality:**
 
-### Integration Tests (~150 lines)
+- Thread-safe where needed (Arc/Mutex patterns)
+- Ergonomic API with builder patterns
+- Comprehensive error handling
+- Production-ready with examples
 
-**Control Protocol (`control/mod.rs`):**
-- ✅ Request/response with mock transport
-- ✅ Timeout handling
-- ✅ Concurrent requests
-- ✅ Handler dispatch (can_use_tool, hook, mcp)
-- ✅ Initialize handshake
+## Next Steps
 
-**Message Integration (`messages.rs`):**
-- ✅ Parse control_request from JSON
-- ✅ Parse control_response from JSON
-- ✅ No regressions in existing 73 tests
+1. ✅ Investigation complete
+2. Phase 1: Implement core types (HookEvent, HookMatcher, HookResponse)
+3. Phase 2: Implement HookCallback trait with blanket impl
+4. Phase 3: Create hooks module structure
+5. Phase 4: Integrate with control protocol
+6. Phase 5: Write comprehensive tests
+7. Phase 6: Add documentation and examples
+8. Phase 7: Verify all acceptance criteria
+9. Phase 8: Run full test suite and clippy
+10. Phase 9: Update task status and push
 
-### Success Criteria
+---
 
-1. ✅ All 4 new files created with complete implementations
-2. ✅ All 3 modified files updated correctly
-3. ✅ ControlProtocol struct with request/response routing
-4. ✅ Pending request tracking with oneshot channels
-5. ✅ Handler traits and registration system
-6. ✅ Initialization handshake method
-7. ✅ Message enum updated with control variants
-8. ✅ All unit tests pass (new: ~20 tests)
-9. ✅ All integration tests pass (new: ~10 tests)
-10. ✅ All existing tests pass (73 tests)
-11. ✅ Zero clippy warnings in new code
-12. ✅ Complete module documentation
-13. ✅ No breaking changes to existing API
-
-## Downstream Impact
-
-**Unblocks 3 Critical Tasks:**
-
-1. **rusty_claw-bip** [P2] - Implement Hook system
-   - Needs: `ControlHandlers`, `HookHandler` trait
-   - Can implement hook registration and callbacks
-
-2. **rusty_claw-qrl** [P2] - Implement ClaudeClient for interactive sessions
-   - Needs: `ControlProtocol`, `initialize()` method
-   - Can start interactive sessions with proper handshake
-
-3. **rusty_claw-tlh** [P2] - Implement SDK MCP Server bridge
-   - Needs: `McpMessageHandler` trait, message routing
-   - Can route JSON-RPC messages to SDK-hosted tools
-
-## Implementation Checklist
-
-### Phase 1: Control Message Types ✓
-- [ ] Create `src/control/messages.rs`
-- [ ] Implement ControlRequest enum with 6 variants
-- [ ] Implement ControlResponse enum with 2 variants
-- [ ] Implement IncomingControlRequest enum with 3 variants
-- [ ] Add serde derive macros with correct attributes
-- [ ] Write serialization unit tests (8 tests)
-- [ ] Write deserialization unit tests (8 tests)
-- [ ] Write round-trip tests (3 tests)
-
-### Phase 2: Handler Traits ✓
-- [ ] Create `src/control/handlers.rs`
-- [ ] Implement CanUseToolHandler trait
-- [ ] Implement HookHandler trait
-- [ ] Implement McpMessageHandler trait
-- [ ] Implement ControlHandlers registry struct
-- [ ] Add registration methods (3 methods)
-- [ ] Write mock handler tests (5 tests)
-
-### Phase 3: Pending Request Tracking ✓
-- [ ] Create `src/control/pending.rs`
-- [ ] Implement PendingRequests struct
-- [ ] Implement insert() method
-- [ ] Implement complete() method
-- [ ] Implement cancel() method
-- [ ] Write unit tests (5 tests)
-
-### Phase 4: ControlProtocol Core ✓
-- [ ] Create `src/control/mod.rs`
-- [ ] Implement ControlProtocol struct
-- [ ] Implement new() constructor
-- [ ] Implement request() method (SDK → CLI)
-- [ ] Implement handle_response() method (CLI → SDK)
-- [ ] Implement handle_incoming() method (CLI → SDK)
-- [ ] Add timeout handling (30 seconds)
-- [ ] Write integration tests (8 tests)
-
-### Phase 5: Initialization Handshake ✓
-- [ ] Implement initialize() method in ControlProtocol
-- [ ] Convert ClaudeAgentOptions to Initialize request
-- [ ] Handle success/error responses
-- [ ] Write initialization tests (3 tests)
-
-### Phase 6: Message Integration ✓
-- [ ] Modify `src/messages.rs`
-- [ ] Add ControlRequest variant to Message enum
-- [ ] Add ControlResponse variant to Message enum
-- [ ] Update parsing logic
-- [ ] Write integration tests (4 tests)
-- [ ] Verify all 73 existing tests pass
-
-### Phase 7: Integration Tests ✓
-- [ ] Create MockTransport for testing
-- [ ] Write full flow tests (5 tests)
-- [ ] Write error scenario tests (5 tests)
-- [ ] Write concurrent request tests (2 tests)
-
-### Phase 8: Documentation & Polish ✓
-- [ ] Write module-level documentation
-- [ ] Document all public methods
-- [ ] Add usage examples
-- [ ] Add architecture diagram
-- [ ] Run clippy and fix warnings
-- [ ] Run cargo fmt
-- [ ] Final test run (all ~103 tests)
-
-### Phase 9: Verification ✓
-- [ ] Cargo build succeeds
-- [ ] Cargo test succeeds (all ~103 tests)
-- [ ] Cargo clippy (0 warnings in new code)
-- [ ] Cargo doc builds successfully
-- [ ] Manual smoke test with mock transport
-- [ ] Update lib.rs prelude exports
-- [ ] Update Cargo.toml dependencies
-
-## Estimated Timeline
-
-- **Phase 1:** Control Message Types - 90 minutes
-- **Phase 2:** Handler Traits - 60 minutes
-- **Phase 3:** Pending Request Tracking - 45 minutes
-- **Phase 4:** ControlProtocol Core - 90 minutes
-- **Phase 5:** Initialization Handshake - 60 minutes
-- **Phase 6:** Message Integration - 45 minutes
-- **Phase 7:** Integration Tests - 60 minutes
-- **Phase 8:** Documentation & Polish - 30 minutes
-- **Phase 9:** Verification - 30 minutes
-
-**Total: ~510 minutes (~8.5 hours)**
-
-## Success Metrics
-
-1. **Code Coverage:** 100% of public API
-2. **Test Pass Rate:** 100% (new: ~30 tests, existing: 73 tests)
-3. **Clippy Warnings:** 0 in new code
-4. **Documentation:** Complete for all public items
-5. **Downstream Unblocked:** 3 P2 tasks ready to start
-
-## Notes
-
-- Follow SPEC.md section 4 exactly for message formats
-- Use Arc<Mutex<...>> for all shared mutable state
-- Handler errors should not panic - return ControlResponse::Error
-- Pending requests MUST be cleaned up on timeout
-- All trait handlers are async for maximum flexibility
-- Default behavior (no handler) should be permissive (allow tools, etc.)
-- The control protocol is critical path - comprehensive testing required
+**Investigation Status:** ✅ COMPLETE
+**Ready to Implement:** YES
+**Estimated Duration:** 7.5 hours
+**Unblocks:** rusty_claw-s8q (permission management)
