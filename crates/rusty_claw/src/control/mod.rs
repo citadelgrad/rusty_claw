@@ -35,15 +35,15 @@
 //! # Example
 //!
 //! ```no_run
-//! use rusty_claw::control::{ControlProtocol, ControlRequest};
-//! use rusty_claw::transport::SubprocessCLITransport;
-//! use rusty_claw::options::ClaudeAgentOptions;
+//! use rusty_claw::prelude::*;
 //! use std::sync::Arc;
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create transport
-//! let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+//! // Create and connect transport
+//! let mut transport = SubprocessCLITransport::new(None, vec![]);
+//! transport.connect().await?;
+//! let transport = Arc::new(transport);
 //!
 //! // Create control protocol
 //! let control = ControlProtocol::new(transport);
@@ -89,13 +89,14 @@ pub mod pending;
 /// # Example
 ///
 /// ```no_run
-/// use rusty_claw::control::{ControlProtocol, ControlRequest};
-/// use rusty_claw::transport::SubprocessCLITransport;
+/// use rusty_claw::prelude::*;
 /// use std::sync::Arc;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+/// let mut transport = SubprocessCLITransport::new(None, vec![]);
+/// transport.connect().await?;
+/// let transport = Arc::new(transport);
 /// let control = ControlProtocol::new(transport);
 ///
 /// // Send a control request
@@ -124,13 +125,14 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::ControlProtocol;
-    /// use rusty_claw::transport::SubprocessCLITransport;
+    /// use rusty_claw::prelude::*;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     /// # Ok(())
     /// # }
@@ -150,10 +152,7 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::ControlProtocol;
-    /// use rusty_claw::control::handlers::CanUseToolHandler;
-    /// use rusty_claw::transport::SubprocessCLITransport;
-    /// use rusty_claw::error::ClawError;
+    /// use rusty_claw::prelude::*;
     /// use async_trait::async_trait;
     /// use std::sync::Arc;
     ///
@@ -172,7 +171,9 @@ impl ControlProtocol {
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     ///
     /// let mut handlers = control.handlers().await;
@@ -203,14 +204,14 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::ControlProtocol;
-    /// use rusty_claw::options::ClaudeAgentOptions;
-    /// use rusty_claw::transport::SubprocessCLITransport;
+    /// use rusty_claw::prelude::*;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     ///
     /// let options = ClaudeAgentOptions::builder()
@@ -261,13 +262,14 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::{ControlProtocol, ControlRequest};
-    /// use rusty_claw::transport::SubprocessCLITransport;
+    /// use rusty_claw::prelude::*;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     ///
     /// let response = control.request(ControlRequest::McpStatus).await?;
@@ -321,14 +323,15 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::{ControlProtocol, ControlResponse};
-    /// use rusty_claw::transport::SubprocessCLITransport;
+    /// use rusty_claw::prelude::*;
     /// use serde_json::json;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     ///
     /// // Called by message receiver when response arrives
@@ -363,14 +366,15 @@ impl ControlProtocol {
     /// # Example
     ///
     /// ```no_run
-    /// use rusty_claw::control::{ControlProtocol, IncomingControlRequest};
-    /// use rusty_claw::transport::SubprocessCLITransport;
+    /// use rusty_claw::prelude::*;
     /// use serde_json::json;
     /// use std::sync::Arc;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// let transport = Arc::new(SubprocessCLITransport::new_auto().await?);
+    /// let mut transport = SubprocessCLITransport::new(None, vec![]);
+    /// transport.connect().await?;
+    /// let transport = Arc::new(transport);
     /// let control = ControlProtocol::new(transport);
     ///
     /// // Called by message receiver when incoming request arrives
