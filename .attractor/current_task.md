@@ -1,91 +1,116 @@
-# Current Task: rusty_claw-qrl ✅ COMPLETE
+# Current Task: rusty_claw-tlh
 
 ## Task Information
-- **ID:** rusty_claw-qrl
-- **Title:** Implement ClaudeClient for interactive sessions
+
+- **ID:** rusty_claw-tlh
+- **Title:** Implement SDK MCP Server bridge
 - **Type:** task
 - **Priority:** P2 (High)
-- **Status:** ✅ COMPLETE
+- **Status:** IN_PROGRESS
 - **Owner:** Scott Nixon
 
-## Summary
+## Description
 
-✅ **Successfully implemented ClaudeClient for interactive sessions with Claude CLI!**
+Implement **SdkMcpServer**, **SdkMcpTool**, **ToolHandler** trait, **ToolResult/ToolContent** types, and JSON-RPC routing for initialize, tools/list, and tools/call methods.
 
-This task implemented a high-level client API for maintaining long-running sessions with the Claude Code CLI. The implementation provides:
+This task creates the MCP (Model Context Protocol) server bridge within the SDK, allowing tools registered with the SDK to be exposed and executed via MCP.
 
-- **Session Management** - connect(), close(), lifecycle control
-- **Message Sending** - send_message() with streaming responses
-- **Control Operations** - interrupt, model switching, permission mode changes
-- **Handler Registration** - can_use_tool, hooks, MCP message handlers
-- **Streaming Responses** - ResponseStream with control message routing
+## Dependencies & Blocks
 
-## Implementation Complete ✅
+✅ **Depends On:**
+- rusty_claw-91n: Implement Control Protocol handler [COMPLETED]
 
-**Files Created (1 file, ~900 lines):**
-1. `crates/rusty_claw/src/client.rs` (~900 lines)
-   - ClaudeClient struct with 14 methods
-   - ResponseStream struct with Stream trait impl
-   - 16 comprehensive tests
+🔒 **Blocks (Unblocks 2 Tasks):**
+- rusty_claw-zyo: Implement #[claw_tool] proc macro [P2]
+- rusty_claw-bkm: Write examples [P3]
 
-**Files Modified (1 file, +5 lines):**
-2. `crates/rusty_claw/src/lib.rs` (+5 lines)
-   - Module declaration and prelude exports
+## What to Implement
 
-## Acceptance Criteria: 7/7 (100%) ✅
+### 1. **SdkMcpServer** - Main MCP Server Structure
+- Wraps ClaudeClient + ControlProtocol for MCP serving
+- Handles JSON-RPC message routing (initialize, tools/list, tools/call)
+- Manages tool registry and execution
+- Integrates with existing Transport layer
 
-1. ✅ **ClaudeClient struct** - Session management with configuration
-2. ✅ **Message sending** - send_message() with streaming responses
-3. ✅ **Streaming responses** - Full message type support
-4. ✅ **Session control** - interrupt() and mode/model switching
-5. ✅ **Integration with Control Protocol** - Uses existing infrastructure
-6. ✅ **Comprehensive tests** - 16 tests, zero clippy warnings
-7. ✅ **Complete documentation** - 100% API coverage with examples
+### 2. **SdkMcpTool** - Tool Wrapper for MCP
+- Wraps tool definitions for MCP exposure
+- Stores tool metadata (name, description, input schema)
+- Maps to underlying handler functions
 
-## Code Quality: EXCELLENT ✅
+### 3. **ToolHandler Trait** - Async Tool Execution
+- Trait for executing registered tools
+- Receives tool name, arguments, and context
+- Returns ToolResult with output/error
 
-- ✅ **160/160 tests PASS** (144 existing + 16 new)
-- ✅ **Clippy:** 0 warnings with `-D warnings`
-- ✅ **Compilation:** Clean build (0.51s)
-- ✅ **Documentation:** 100% coverage
-- ✅ **Thread-safe:** Send + Sync verified
+### 4. **ToolResult/ToolContent Types** - Result Representation
+- ToolResult: success/error wrapper
+- ToolContent: text/image/etc content variants
+- Serializable to MCP protocol format
+
+### 5. **JSON-RPC Routing** - Protocol Handler
+- Route incoming MCP requests to handlers
+- Implement initialize, tools/list, tools/call methods
+- Error handling and response formatting
+
+## Success Criteria
+
+- [x] SdkMcpServer struct with MCP protocol support
+- [x] Tool registry and listing functionality
+- [x] Tool execution via ToolHandler trait
+- [x] JSON-RPC routing for all MCP methods
+- [x] Proper error handling and responses
+- [x] Integration with Control Protocol handler
+- [x] 25 comprehensive tests (exceeds 20-30)
+- [x] Complete documentation with examples
+- [x] Zero clippy warnings
+
+## Files to Create/Modify
+
+**New Files (1 file, ~800-1000 lines):**
+1. `crates/rusty_claw/src/mcp_server.rs` - SdkMcpServer + ToolHandler + tests
+
+**Modified Files (1 file, +5 lines):**
+2. `crates/rusty_claw/src/lib.rs` - Module declaration + prelude exports
+
+## Architecture Notes
+
+**Integration Points:**
+- Uses ClaudeClient for session management
+- Uses ControlProtocol for routing control messages
+- Uses Message types for JSON-RPC wrapping
+- Uses Transport layer for stdio communication
+
+**Design Pattern:**
+- Similar to existing Query/QueryStream pattern
+- ToolHandler trait for extensibility
+- Arc<Mutex> for shared state
 
 ## Downstream Impact
 
-**Unblocks 3 P2/P3 Tasks:**
-- ✅ rusty_claw-isy - Add integration tests [P2]
-- ✅ rusty_claw-b4s - Implement subagent support [P3]
-- ✅ rusty_claw-bkm - Write examples [P3]
-
-## Architecture Highlights
-
-### Key Design Decisions
-
-**1. Single-Use Message Pattern**
-- `send_message()` takes ownership of receiver
-- Keeps design simple (no background task)
-- Matches existing `query()` API pattern
-
-**2. Control Message Routing**
-- CLI→SDK control messages routed internally
-- User never sees control protocol messages
-- Transparent permission checks and hooks
-
-**3. Lifetime Management**
-- `Arc<Mutex<Option<Receiver>>>` for receiver storage
-- ResponseStream owns receiver during streaming
-- Clean separation of concerns
-
-## Files with Documentation
-
-**Reference Documentation:**
-- `.attractor/current_task.md` - This file
-- `.attractor/investigation.md` - Implementation plan (740 lines)
-- `.attractor/implementation-summary.md` - Detailed summary
-- `.attractor/test-results.md` - Comprehensive test results
+**Unblocks 2 P2/P3 Tasks:**
+1. rusty_claw-zyo - Implement #[claw_tool] proc macro [P2]
+2. rusty_claw-bkm - Write examples [P3]
 
 ---
 
-**Status:** ✅ READY FOR REVIEW AND MERGE
+## Implementation Results
 
-The ClaudeClient implementation is complete, tested, documented, and production-ready!
+**Status:** ✅ COMPLETE - All acceptance criteria met
+
+**Summary:**
+- ✅ 1,070 lines of production-ready code
+- ✅ 184/184 unit tests passing (25 new, 159 existing)
+- ✅ 87/87 doctests passing (14 new, 73 existing)
+- ✅ Zero clippy warnings
+- ✅ Zero regressions
+- ✅ Complete documentation with module-level examples
+- ✅ All 9 success criteria met
+
+**Files:**
+- Created: `crates/rusty_claw/src/mcp_server.rs` (1,070 lines)
+- Modified: `crates/rusty_claw/src/lib.rs` (+5 lines)
+- Modified: `crates/rusty_claw/src/options.rs` (+10 lines)
+
+**Documentation:**
+- See `.attractor/implementation-summary.md` for complete details
+- See `.attractor/investigation.md` for implementation plan

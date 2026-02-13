@@ -1,740 +1,578 @@
-# Investigation: rusty_claw-qrl - Implement ClaudeClient for interactive sessions
+# Investigation: rusty_claw-tlh - Implement SDK MCP Server bridge
 
-**Task ID:** rusty_claw-qrl
-**Priority:** P2 (High)
-**Status:** in_progress
+**Task ID:** rusty_claw-tlh
+**Status:** IN_PROGRESS
 **Date:** 2026-02-13
 
-## Task Overview
+---
 
-Implement a **ClaudeClient** struct that maintains long-running interactive sessions with the Claude CLI. This client will:
-- Manage session lifecycle (connect, configure, close)
-- Send messages to Claude and receive streaming responses
-- Support runtime control operations (interrupt, permission mode changes, model switching)
-- Build on top of existing Control Protocol handler and query() function
+## Executive Summary
 
-## Dependencies Status
+This task implements the **MCP (Model Context Protocol) server bridge** within the Rusty Claw SDK. The MCP server bridge enables SDK users to register Rust functions as tools that can be invoked by Claude via the MCP protocol. The implementation includes:
 
-✅ **All dependencies satisfied:**
-1. ✅ **rusty_claw-91n** - Control Protocol handler (COMPLETE)
-2. ✅ **rusty_claw-sna** - query() function (COMPLETE)
+1. **SdkMcpServer** - Main MCP server struct managing tool registry and JSON-RPC routing
+2. **SdkMcpTool** - Tool wrapper containing metadata and handler reference
+3. **ToolHandler** trait - Async trait for tool execution
+4. **ToolResult/ToolContent** types - Result representation for MCP responses
+5. **JSON-RPC routing** - Handler methods for `initialize`, `tools/list`, `tools/call`
 
-## Existing Foundation (What We Have)
+---
 
-### 1. Control Protocol Infrastructure (rusty_claw-91n)
+## Current State Analysis
 
-**Location:** `src/control/mod.rs`, `src/control/messages.rs`
+### What Exists (Solid Foundation)
 
-**What it provides:**
-- `ControlProtocol` struct - Manages bidirectional control communication
-- Request/response routing with timeout handling
-- Handler registration system (can_use_tool, hooks, MCP)
-- Session initialization via `initialize()` method
-- Control operations:
-  - `Interrupt` - Stop current execution
-  - `SetPermissionMode` - Change permission mode at runtime
-  - `SetModel` - Switch Claude model at runtime
-  - `McpStatus` - Query MCP server status
-  - `RewindFiles` - Roll back filesystem changes
+#### 1. Control Protocol Infrastructure ✅
+**File:** `crates/rusty_claw/src/control/mod.rs`
 
-**Key methods:**
-```rust
-impl ControlProtocol {
-    pub fn new(transport: Arc<dyn Transport>) -> Self
-    pub async fn initialize(&self, options: &ClaudeAgentOptions) -> Result<(), ClawError>
-    pub async fn request(&self, request: ControlRequest) -> Result<ControlResponse, ClawError>
-    pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest)
-    pub async fn handle_response(&self, request_id: &str, response: ControlResponse)
-    pub async fn handlers(&self) -> MutexGuard<'_, ControlHandlers>
-}
-```
-
-### 2. Query API (rusty_claw-sna)
-
-**Location:** `src/query.rs`
-
-**What it provides:**
-- One-shot query interface via `query()` function
-- Stream-based response handling
-- `QueryStream<S>` wrapper that owns transport for lifetime management
-- Automatic CLI discovery, connection, and message parsing
-
-**Pattern to follow:**
-```rust
-pub async fn query(
-    prompt: impl Into<String>,
-    options: Option<ClaudeAgentOptions>,
-) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError>
-```
-
-**Key insight:** QueryStream solves the lifetime management problem by owning the transport. ClaudeClient will need similar approach.
-
-### 3. Transport Layer
-
-**Location:** `src/transport/mod.rs`, `src/transport/subprocess.rs`
-
-**What it provides:**
-- `Transport` trait - Abstract interface for CLI communication
-- `SubprocessCLITransport` - Subprocess implementation
-- Bidirectional communication (stdin writes, stdout reads)
-- NDJSON message framing and parsing
-- Process lifecycle management
-
-**Key methods:**
-```rust
-#[async_trait]
-pub trait Transport: Send + Sync {
-    async fn connect(&mut self) -> Result<(), ClawError>;
-    async fn write(&self, message: &[u8]) -> Result<(), ClawError>;
-    fn messages(&self) -> mpsc::UnboundedReceiver<Result<Value, ClawError>>;
-    async fn end_input(&self) -> Result<(), ClawError>;
-    async fn close(&mut self) -> Result<(), ClawError>;
-    fn is_ready(&self) -> bool;
-}
-```
-
-### 4. Message Types
-
-**Location:** `src/messages.rs`
-
-**Available message types:**
-- `Message::System(SystemMessage)` - Init, CompactBoundary
-- `Message::Assistant(AssistantMessage)` - Claude responses with content blocks
-- `Message::User(UserMessage)` - User input messages
-- `Message::Result(ResultMessage)` - Success, Error, InputRequired
-- `Message::ControlRequest` - Control protocol requests
-- `Message::ControlResponse` - Control protocol responses
-
-**Content blocks:**
-- `ContentBlock::Text` - Plain text content
-- `ContentBlock::ToolUse` - Tool invocation requests
-- `ContentBlock::ToolResult` - Tool execution results
-- `ContentBlock::Thinking` - Extended thinking tokens
-
-**Streaming:**
-- `StreamEvent` struct exists for streaming delta updates
-
-### 5. Configuration Options
-
-**Location:** `src/options.rs`
-
-**ClaudeAgentOptions provides:**
-- System prompt configuration
-- Model selection
-- Permission mode
-- Hook configuration
-- Agent definitions
-- MCP server configuration
-- Max turns, turn cost limits
-- Tool allowlists/denylists
-- CLI arg generation via `to_cli_args()`
-
-## What Needs to Be Implemented
-
-### 1. ClaudeClient Struct
-
-**New module:** `src/client.rs` or `src/client/mod.rs`
-
-**Core structure:**
-```rust
-pub struct ClaudeClient {
-    // Control protocol for sending requests and handling incoming
-    control: Arc<ControlProtocol>,
-
-    // Transport for message I/O
-    transport: Arc<dyn Transport>,
-
-    // Session configuration
-    options: ClaudeAgentOptions,
-
-    // Session state
-    session_id: Option<String>,
-    is_initialized: Arc<Mutex<bool>>,
-
-    // Message receiver for streaming responses
-    // Option because messages() can only be called once
-    message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>>>,
-}
-```
-
-**Thread safety:** All fields must be thread-safe (Send + Sync) for async use.
-
-### 2. Session Management
-
-**Methods to implement:**
-
-```rust
-impl ClaudeClient {
-    /// Create a new client (does not connect)
-    pub fn new(options: ClaudeAgentOptions) -> Result<Self, ClawError>;
-
-    /// Connect to CLI and initialize session
-    pub async fn connect(&mut self) -> Result<(), ClawError>;
-
-    /// Check if client is connected and ready
-    pub fn is_connected(&self) -> bool;
-
-    /// Close the session gracefully
-    pub async fn close(&mut self) -> Result<(), ClawError>;
-}
-```
-
-**Flow:**
-1. `new()` - Create client with options (transport not created yet)
-2. `connect()` - Create transport, connect, initialize control protocol
-3. Session is ready for message sending
-4. `close()` - End input, wait for CLI exit, cleanup
-
-### 3. Message Sending
-
-**Methods to implement:**
-
-```rust
-impl ClaudeClient {
-    /// Send a message and return a stream of responses
-    pub async fn send_message(
-        &self,
-        content: impl Into<String>,
-    ) -> Result<ResponseStream, ClawError>;
-
-    /// Internal: Write a message to CLI stdin
-    async fn write_message(&self, content: &str) -> Result<(), ClawError>;
-}
-```
-
-**Message format:**
-```json
-{
-  "type": "user",
-  "message": {
-    "role": "user",
-    "content": [{"type": "text", "text": "..."}]
+The Control Protocol implementation provides:
+- **Request/response routing** - `ControlProtocol::request()` for sending requests to CLI
+- **Handler dispatch** - `ControlProtocol::handle_incoming()` routes CLI requests to registered handlers
+- **McpMessageHandler trait** (lines 186-199) - Already defined for routing MCP messages:
+  ```rust
+  #[async_trait]
+  pub trait McpMessageHandler: Send + Sync {
+      async fn handle(&self, server_name: &str, message: Value) -> Result<Value, ClawError>;
   }
-}
-```
+  ```
+- **Handler registration** - `ControlHandlers::register_mcp_message()` (line 341)
+- **Control message routing** - `IncomingControlRequest::McpMessage` variant (lines 305-311)
 
-**ResponseStream design:**
-- Wrap the message receiver from transport
-- Parse raw `Value` into typed `Message` structs
-- Handle control protocol messages internally (route to handlers)
-- Yield only user-facing messages (Assistant, Result, System)
-- Support async iteration via `Stream` trait
+**Key Insight:** The infrastructure for **routing MCP messages from CLI → SDK** already exists! We just need to implement the handler that:
+1. Deserializes JSON-RPC requests
+2. Routes to appropriate SdkMcpServer method
+3. Serializes JSON-RPC responses
 
-### 4. Streaming Response Handling
+#### 2. SdkMcpServer Placeholder ✅
+**File:** `crates/rusty_claw/src/options.rs` (lines 95-98)
 
-**New type:**
+Current placeholder:
 ```rust
-pub struct ResponseStream {
-    // Receiver for raw messages
-    rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>,
-
-    // Control protocol reference for routing control messages
-    control: Arc<ControlProtocol>,
-
-    // Stream state tracking
-    is_complete: bool,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SdkMcpServer {
+    // Detailed implementation in future tasks (SPEC.md section 7.2)
 }
 ```
 
-**Stream implementation:**
+**Action Required:** Expand this with full implementation
+
+#### 3. Control Messages Support ✅
+**File:** `crates/rusty_claw/src/control/messages.rs`
+
+The `Initialize` control request already supports `sdk_mcp_servers`:
 ```rust
-impl Stream for ResponseStream {
-    type Item = Result<Message, ClawError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>)
-        -> Poll<Option<Self::Item>>;
+Initialize {
+    hooks: HashMap<HookEvent, Vec<HookMatcher>>,
+    agents: HashMap<String, AgentDefinition>,
+    sdk_mcp_servers: Vec<SdkMcpServer>,  // ✅ Already included
+    permissions: Option<PermissionMode>,
+    can_use_tool: bool,
 }
 ```
 
-**Message routing logic:**
-- `Message::ControlRequest` → Route to `control.handle_incoming()`
-- `Message::ControlResponse` → Route to `control.handle_response()`
-- `Message::Assistant/User/Result/System` → Yield to user
-- End of stream → Set `is_complete = true`
+**Result:** When we create an `SdkMcpServer`, it will automatically be sent to the CLI during initialization!
 
-### 5. Session Control Operations
+#### 4. Dependencies ✅
+All required dependencies are already in `Cargo.toml`:
+- ✅ `tokio` - Async runtime
+- ✅ `async-trait` - Async trait support
+- ✅ `serde` + `serde_json` - Serialization
+- ✅ `uuid` - Request ID generation (if needed)
 
-**Methods to implement:**
+**No new dependencies required!**
 
-```rust
-impl ClaudeClient {
-    /// Interrupt the current agent execution
-    pub async fn interrupt(&self) -> Result<(), ClawError>;
+---
 
-    /// Change permission mode during session
-    pub async fn set_permission_mode(&self, mode: PermissionMode) -> Result<(), ClawError>;
+## Required Implementation
 
-    /// Switch the active model during session
-    pub async fn set_model(&self, model: impl Into<String>) -> Result<(), ClawError>;
+### Architecture Overview
 
-    /// Query MCP server connection status
-    pub async fn mcp_status(&self) -> Result<serde_json::Value, ClawError>;
-
-    /// Rewind file state to a specific message
-    pub async fn rewind_files(&self, message_id: impl Into<String>) -> Result<(), ClawError>;
-}
+```text
+┌────────────────────────────────────────────────────────────────┐
+│                     MCP Server Bridge                          │
+│                                                                │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │                 SdkMcpServer                             │ │
+│  │                                                          │ │
+│  │  pub name: String                                        │ │
+│  │  pub version: String                                     │ │
+│  │  tools: Vec<SdkMcpTool>                                  │ │
+│  │                                                          │ │
+│  │  Methods:                                                │ │
+│  │  - new() → Self                                          │ │
+│  │  - register_tool(tool: SdkMcpTool)                       │ │
+│  │  - handle_jsonrpc(request: Value) → Value                │ │
+│  │  - handle_initialize(request: &Value) → Value            │ │
+│  │  - handle_tools_list(request: &Value) → Value            │ │
+│  │  - handle_tools_call(request: &Value) → Result<Value>    │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                          │                                     │
+│                          │ Contains Vec<SdkMcpTool>            │
+│                          ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │                 SdkMcpTool                               │ │
+│  │                                                          │ │
+│  │  pub name: String                                        │ │
+│  │  pub description: String                                 │ │
+│  │  pub input_schema: serde_json::Value                     │ │
+│  │  handler: Arc<dyn ToolHandler>                           │ │
+│  │                                                          │ │
+│  │  Methods:                                                │ │
+│  │  - new(name, description, schema, handler) → Self        │ │
+│  │  - to_tool_definition() → serde_json::Value              │ │
+│  │  - execute(args: Value) → Result<ToolResult>             │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                          │                                     │
+│                          │ Uses Arc<dyn ToolHandler>           │
+│                          ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │         ToolHandler (async trait)                        │ │
+│  │                                                          │ │
+│  │  async fn call(&self, args: Value)                       │ │
+│  │      → Result<ToolResult, ClawError>                     │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                          │                                     │
+│                          │ Returns                             │
+│                          ▼                                     │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │              ToolResult + ToolContent                    │ │
+│  │                                                          │ │
+│  │  pub struct ToolResult {                                 │ │
+│  │      pub content: Vec<ToolContent>,                      │ │
+│  │      pub is_error: bool,                                 │ │
+│  │  }                                                       │ │
+│  │                                                          │ │
+│  │  pub enum ToolContent {                                  │ │
+│  │      Text { text: String },                              │ │
+│  │      Image { data: String, mime_type: String },          │ │
+│  │  }                                                       │ │
+│  └──────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────┘
+                         │
+                         │ Registered via McpMessageHandler
+                         ▼
+        ┌────────────────────────────────────────┐
+        │       ControlProtocol                  │
+        │   (existing infrastructure)            │
+        │                                        │
+        │  - handle_incoming() routes            │
+        │    IncomingControlRequest::McpMessage  │
+        │  - Calls McpMessageHandler::handle()   │
+        └────────────────────────────────────────┘
+                         │
+                         │ JSON-RPC messages from CLI
+                         ▼
+              ┌──────────────────────┐
+              │    Claude Code CLI   │
+              │   (MCP client)       │
+              └──────────────────────┘
 ```
 
-**Implementation pattern:**
-```rust
-pub async fn interrupt(&self) -> Result<(), ClawError> {
-    let response = self.control.request(ControlRequest::Interrupt).await?;
-    match response {
-        ControlResponse::Success { .. } => Ok(()),
-        ControlResponse::Error { error, .. } => {
-            Err(ClawError::ControlError(format!("Interrupt failed: {}", error)))
-        }
-    }
-}
+### Message Flow
+
+**1. Registration (Initialization):**
+```
+SDK creates SdkMcpServer
+  → Register with ClaudeAgentOptions
+  → ControlProtocol::initialize() sends to CLI
+  → CLI knows about SDK-hosted MCP server
 ```
 
-### 6. Handler Registration
-
-**Methods to implement:**
-
-```rust
-impl ClaudeClient {
-    /// Register a handler for can_use_tool requests
-    pub async fn register_can_use_tool_handler(
-        &self,
-        handler: Arc<dyn CanUseToolHandler>,
-    );
-
-    /// Register a hook callback
-    pub async fn register_hook(
-        &self,
-        hook_id: String,
-        handler: Arc<dyn HookHandler>,
-    );
-
-    /// Register an MCP message handler
-    pub async fn register_mcp_message_handler(
-        &self,
-        handler: Arc<dyn McpMessageHandler>,
-    );
-}
+**2. Tool List Request:**
+```
+CLI sends JSON-RPC: {"method": "tools/list", ...}
+  → IncomingControlRequest::McpMessage
+  → ControlProtocol::handle_incoming()
+  → McpMessageHandler::handle()
+  → SdkMcpServer::handle_jsonrpc()
+  → SdkMcpServer::handle_tools_list()
+  → Returns tool definitions JSON
 ```
 
-**Implementation:** Delegate to `control.handlers()` and register on the ControlHandlers instance.
-
-## Architecture Design
-
-### Ownership and Lifetimes
-
-**Problem:** Transport's `messages()` method can only be called once (consumes the receiver).
-
-**Solution (inspired by QueryStream):**
-1. ClaudeClient stores `Option<Receiver>` in Arc<Mutex<>>
-2. On `connect()`, call `transport.messages()` once and store
-3. `send_message()` takes receiver out of Option, wraps in ResponseStream
-4. ResponseStream owns the receiver for its lifetime
-5. When ResponseStream is dropped, client can't send more messages (session over)
-
-**Alternative approach:** Multiple message sending
-- Store receiver permanently in ClaudeClient
-- `send_message()` doesn't take ownership, just yields from shared receiver
-- All messages from CLI are routed through a single stream
-- Client needs internal task to continuously process messages
-
-**Recommendation:** Start with single-message approach (simpler), can extend later.
-
-### Message Routing
-
+**3. Tool Execution:**
 ```
-CLI stdout → Transport → UnboundedReceiver<Result<Value>>
-                              ↓
-                         ClaudeClient (routing)
-                              ↓
-                    ┌─────────┴──────────┐
-                    ↓                    ↓
-         Control Messages         User Messages
-         (ControlRequest,         (Assistant,
-          ControlResponse)         Result, etc.)
-                    ↓                    ↓
-            ControlProtocol          ResponseStream
-            (handle internally)      (yield to user)
+CLI sends JSON-RPC: {"method": "tools/call", "params": {...}}
+  → IncomingControlRequest::McpMessage
+  → ControlProtocol::handle_incoming()
+  → McpMessageHandler::handle()
+  → SdkMcpServer::handle_jsonrpc()
+  → SdkMcpServer::handle_tools_call()
+  → Find tool by name
+  → SdkMcpTool::execute()
+  → ToolHandler::call()
+  → Returns ToolResult
+  → Serialize to JSON-RPC response
 ```
 
-### Concurrent Operations
-
-**Thread safety requirements:**
-- Multiple tasks can call control operations concurrently
-- ControlProtocol already handles concurrent requests (Arc + Mutex)
-- ResponseStream is single-consumer (one task polls it)
-- Transport write is thread-safe (Arc<dyn Transport>)
-
-## Files to Create
-
-### Primary Implementation
-
-**File:** `crates/rusty_claw/src/client.rs` (~500-700 lines)
-
-**Structure:**
-```rust
-//! ClaudeClient for interactive sessions with Claude CLI
-//!
-//! # Overview
-//! ...
-//!
-//! # Example
-//! ...
-
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio_stream::Stream;
-
-// ClaudeClient struct
-pub struct ClaudeClient { /* ... */ }
-
-// Session management methods
-impl ClaudeClient {
-    pub fn new() { /* ... */ }
-    pub async fn connect() { /* ... */ }
-    pub fn is_connected() { /* ... */ }
-    pub async fn close() { /* ... */ }
-}
-
-// Message sending methods
-impl ClaudeClient {
-    pub async fn send_message() { /* ... */ }
-    async fn write_message() { /* ... */ }
-}
-
-// Control operations
-impl ClaudeClient {
-    pub async fn interrupt() { /* ... */ }
-    pub async fn set_permission_mode() { /* ... */ }
-    pub async fn set_model() { /* ... */ }
-    pub async fn mcp_status() { /* ... */ }
-    pub async fn rewind_files() { /* ... */ }
-}
-
-// Handler registration
-impl ClaudeClient {
-    pub async fn register_can_use_tool_handler() { /* ... */ }
-    pub async fn register_hook() { /* ... */ }
-    pub async fn register_mcp_message_handler() { /* ... */ }
-}
-
-// ResponseStream struct
-pub struct ResponseStream { /* ... */ }
-
-impl Stream for ResponseStream {
-    type Item = Result<Message, ClawError>;
-    fn poll_next() { /* ... */ }
-}
-
-// Tests module
-#[cfg(test)]
-mod tests { /* ... */ }
-```
-
-### Modified Files
-
-**File:** `crates/rusty_claw/src/lib.rs` (+3 lines)
-
-Add module declaration and prelude export:
-```rust
-// Add after query module
-pub mod client;
-
-// Update prelude
-pub use crate::client::{ClaudeClient, ResponseStream};
-```
+---
 
 ## Implementation Plan
 
-### Phase 1: Basic Structure (60 min)
+### Phase 1: Core Types (90 min)
 
-**Tasks:**
-1. Create `src/client.rs` with module docs
-2. Define `ClaudeClient` struct with all fields
-3. Define `ResponseStream` struct
-4. Implement `ClaudeClient::new()` (no connection yet)
-5. Implement `is_connected()` (check transport.is_ready())
-6. Add module to lib.rs and prelude
+**File:** `crates/rusty_claw/src/mcp_server.rs` (NEW)
 
-**Deliverable:** Compiles, struct is public and documented.
+#### 1.1 ToolContent enum (~15 min)
+- Text variant with text field
+- Image variant with data + mime_type fields
+- Serde tagging for JSON-RPC format
+- Helper constructors
 
-### Phase 2: Session Management (90 min)
+#### 1.2 ToolResult struct (~15 min)
+- content: Vec<ToolContent> field
+- is_error: bool field
+- Helper constructors: text(), error()
 
-**Tasks:**
-1. Implement `ClaudeClient::connect()`
-   - Create SubprocessCLITransport
-   - Call transport.connect()
-   - Extract CLI args from options
-   - Create ControlProtocol
-   - Call control.initialize()
-   - Store message receiver in Arc<Mutex<Option<>>>
-2. Implement `ClaudeClient::close()`
-   - Call transport.end_input()
-   - Call transport.close()
-   - Set is_initialized to false
-3. Add basic unit tests for lifecycle
+#### 1.3 ToolHandler trait (~30 min)
+- Async trait for tool execution
+- Thread-safe (Send + Sync)
+- Takes JSON args, returns ToolResult
 
-**Deliverable:** Can create, connect, and close a client.
+#### 1.4 Tests (~30 min)
+- Test ToolContent serialization
+- Test ToolResult creation
+- Test ToolHandler trait with mock
 
-### Phase 3: Message Sending (90 min)
+---
 
-**Tasks:**
-1. Implement `write_message()` helper
-   - Format user message JSON
-   - Serialize to bytes
-   - Call transport.write()
-2. Implement `send_message()`
-   - Check is_connected
-   - Call write_message()
-   - Take receiver from Arc<Mutex<Option<>>>
-   - Wrap in ResponseStream
-   - Return ResponseStream
-3. Add tests for message formatting
+### Phase 2: SdkMcpTool (60 min)
 
-**Deliverable:** Can send messages and get response stream.
+#### 2.1 SdkMcpTool struct (~20 min)
+- name, description, input_schema fields
+- Arc-wrapped handler for shared ownership
 
-### Phase 4: Streaming Response Handling (120 min)
+#### 2.2 Methods (~20 min)
+- new() constructor
+- to_tool_definition() for JSON-RPC
+- execute() delegates to handler
 
-**Tasks:**
-1. Implement `ResponseStream` struct
-   - Store receiver and control reference
-   - Add is_complete flag
-2. Implement `Stream` trait for ResponseStream
-   - Poll receiver for next message
-   - Parse Value into Message
-   - Route control messages to ControlProtocol
-   - Yield user-facing messages
-   - Handle end of stream
-3. Add helper methods (is_complete(), etc.)
-4. Add comprehensive streaming tests
-   - Mock transport with canned responses
-   - Test control message routing
-   - Test user message yielding
-   - Test end of stream handling
+#### 2.3 Tests (~20 min)
+- Test tool creation
+- Test to_tool_definition() serialization
+- Test execute() with mock handler
 
-**Deliverable:** ResponseStream works correctly with message routing.
+---
 
-### Phase 5: Control Operations (60 min)
+### Phase 3: SdkMcpServer Core (90 min)
 
-**Tasks:**
-1. Implement `interrupt()`
-2. Implement `set_permission_mode()`
-3. Implement `set_model()`
-4. Implement `mcp_status()`
-5. Implement `rewind_files()`
-6. Add unit tests for each operation
+#### 3.1 Update SdkMcpServer in options.rs (~15 min)
+- Add name and version fields
+- Keep minimal for serialization
 
-**Deliverable:** All control operations work.
+#### 3.2 Full SdkMcpServerImpl (~45 min)
+- Tool registry (HashMap)
+- register_tool(), get_tool(), list_tools()
 
-### Phase 6: Handler Registration (30 min)
+#### 3.3 Tests (~30 min)
+- Test server creation
+- Test tool registration
+- Test list_tools() output
 
-**Tasks:**
-1. Implement `register_can_use_tool_handler()`
-2. Implement `register_hook()`
-3. Implement `register_mcp_message_handler()`
-4. Add tests for handler registration
+---
 
-**Deliverable:** Handlers can be registered.
+### Phase 4: JSON-RPC Routing (120 min)
 
-### Phase 7: Integration Tests (90 min)
+#### 4.1 JSON-RPC helpers (~20 min)
+- json_rpc_success()
+- json_rpc_error()
 
-**Tasks:**
-1. Create MockTransport for integration testing
-2. Test full session lifecycle (connect → send → receive → close)
-3. Test concurrent control operations
-4. Test error scenarios (connection failure, CLI error responses)
-5. Test handler invocation during streaming
-6. Test interrupted streams
-7. Test permission mode changes during session
+#### 4.2-4.5 Handler methods (~80 min)
+- handle_initialize()
+- handle_tools_list()
+- handle_tools_call()
+- handle_jsonrpc() router
 
-**Deliverable:** ~20-30 comprehensive tests.
+#### 4.6 Tests (~20 min)
+- Test each handler method
+- Test JSON-RPC routing
 
-### Phase 8: Documentation & Polish (60 min)
+---
 
-**Tasks:**
-1. Write comprehensive module-level docs with examples
-2. Document all public structs, methods, and types
-3. Add usage examples showing:
-   - Basic session
-   - Streaming responses
-   - Control operations
-   - Handler registration
-4. Add doctests for key examples
-5. Run clippy and fix any warnings
-6. Run cargo doc and verify rendering
-7. Update README/docs with ClaudeClient info
+### Phase 5: McpMessageHandler Integration (60 min)
 
-**Deliverable:** 100% documentation coverage, zero clippy warnings.
+#### 5.1 Server registry (~30 min)
+- SdkMcpServerRegistry struct
+- register(), get() methods
 
-### Phase 9: Final Verification (30 min)
+#### 5.2 Implement McpMessageHandler (~30 min)
+- Route messages to servers
+- Handle server not found errors
 
-**Tasks:**
-1. Run full test suite (cargo test)
-2. Verify no regressions in existing tests
-3. Check test coverage (aim for >90%)
-4. Run clippy in CI mode (treat warnings as errors)
-5. Verify thread safety (Send + Sync bounds)
-6. Test compile times (should be reasonable)
-7. Create final summary
+---
 
-**Deliverable:** Production-ready implementation.
+### Phase 6: Module Integration (30 min)
 
-## Expected Outcomes
+#### 6.1 Update lib.rs (~10 min)
+- Replace mcp {} stub with real module
+- Add prelude exports
 
-### New Files (1 file, ~600-800 lines)
+#### 6.2 Update options.rs (~20 min)
+- Finalize SdkMcpServer definition
 
-1. **`crates/rusty_claw/src/client.rs`** (~600-800 lines)
-   - ClaudeClient struct (~100 lines)
-   - Session management methods (~150 lines)
-   - Message sending methods (~100 lines)
-   - Control operations (~100 lines)
-   - Handler registration (~50 lines)
-   - ResponseStream struct + Stream impl (~100 lines)
-   - Tests module (~200-300 lines)
+---
 
-### Modified Files (1 file, +5 lines)
+### Phase 7: Comprehensive Tests (120 min)
 
-2. **`crates/rusty_claw/src/lib.rs`** (+5 lines)
-   - Add `pub mod client;`
-   - Update prelude with `ClaudeClient` and `ResponseStream`
+#### 7.1 Unit tests (~60 min)
+- 12 unit tests for all components
 
-### Test Coverage
+#### 7.2 Integration tests (~60 min)
+- 6 integration tests for full flows
+- Thread safety validation
 
 **Target:** 20-30 comprehensive tests
-- Unit tests: ~15 tests (lifecycle, message formatting, control ops)
-- Integration tests: ~10 tests (full session, concurrent ops, error handling)
-- Doctests: ~5 tests (usage examples)
 
-**Categories:**
-- Session lifecycle (connect, close, reconnect)
-- Message sending (single message, multiple messages)
-- Response streaming (delta updates, end of stream)
-- Control operations (interrupt, mode changes, model switch)
-- Handler registration (can_use_tool, hooks, MCP)
-- Error handling (connection failure, CLI errors, timeouts)
-- Concurrent operations (multiple control requests)
-- Thread safety (Send + Sync)
+---
 
-### Documentation
+### Phase 8: Documentation (60 min)
 
-**Module-level docs:**
-- Overview of ClaudeClient purpose
-- Architecture explanation (vs query API)
-- Basic usage example
-- Advanced usage examples (streaming, control ops)
+#### 8.1 Module-level docs (~20 min)
+- Overview with architecture diagram
+- Quick start example
 
-**Struct/method docs:**
-- Complete API documentation
-- Examples for all public methods
-- Error documentation
-- Thread safety notes
+#### 8.2 API documentation (~30 min)
+- Document all public types
+- Add doctests for key methods
+
+#### 8.3 README example (~10 min)
+- End-to-end usage example
+
+---
+
+### Phase 9: Verification (30 min)
+
+#### 9.1 Test execution (~10 min)
+- cargo test --lib
+- cargo test --doc
+
+#### 9.2 Clippy (~10 min)
+- cargo clippy -- -D warnings
+
+#### 9.3 Documentation check (~10 min)
+- cargo doc --no-deps --open
+
+---
+
+## Files to Create/Modify
+
+### New Files (1 file, ~800-1000 lines)
+
+**1. `crates/rusty_claw/src/mcp_server.rs`**
+- ToolContent enum (~30 lines)
+- ToolResult struct (~40 lines)
+- ToolHandler trait (~20 lines)
+- SdkMcpTool struct + impl (~100 lines)
+- SdkMcpServerImpl struct + impl (~200 lines)
+- SdkMcpServerRegistry struct + impl (~100 lines)
+- JSON-RPC helpers (~50 lines)
+- Module-level documentation (~80 lines)
+- Tests (~300-400 lines)
+
+### Modified Files (2 files, ~15 lines total)
+
+**2. `crates/rusty_claw/src/lib.rs`** (+5 lines)
+- Replace `pub mod mcp {}` stub with `pub mod mcp_server;`
+- Add mcp_server exports to prelude
+
+**3. `crates/rusty_claw/src/options.rs`** (~10 lines)
+- Update `SdkMcpServer` struct from placeholder to full definition
+- Add `name` and `version` fields
+
+---
+
+## Success Criteria
+
+### 1. ✅ SdkMcpServer struct with MCP protocol support
+- SdkMcpServerImpl with tool registry
+- JSON-RPC message handling
+- Protocol version support
+
+### 2. ✅ Tool registry and listing functionality
+- register_tool() method
+- list_tools() method
+- get_tool() lookup
+
+### 3. ✅ Tool execution via ToolHandler trait
+- ToolHandler trait definition
+- SdkMcpTool::execute() implementation
+- Error propagation
+
+### 4. ✅ JSON-RPC routing for all MCP methods
+- initialize → server info + capabilities
+- tools/list → tool definitions
+- tools/call → tool execution
+- Method routing via handle_jsonrpc()
+
+### 5. ✅ Proper error handling and responses
+- JSON-RPC error codes (-32601, -32602, -32603)
+- ClawError propagation
+- ToolResult error flag
+
+### 6. ✅ Integration with Control Protocol handler
+- SdkMcpServerRegistry implements McpMessageHandler
+- Routes messages to appropriate server
+- Returns JSON-RPC responses
+
+### 7. ✅ 20-30 comprehensive tests
+- 12 unit tests
+- 6 integration tests
+- Doctests for key methods
+- **Total: ~20-25 tests**
+
+### 8. ✅ Complete documentation with examples
+- Module-level docs with architecture
+- API documentation for all public types
+- Doctests for key methods
+- End-to-end usage example
+
+### 9. ✅ Zero clippy warnings
+- All code passes clippy -- -D warnings
+
+---
 
 ## Dependencies & Risks
 
-### External Dependencies
+### Dependencies
 
-**Already in Cargo.toml:**
-- `tokio` - Async runtime (Mutex, mpsc channels)
-- `tokio-stream` - Stream trait and utilities
-- `async-trait` - Async trait methods
-- `serde`, `serde_json` - Serialization
-- `uuid` - Request ID generation (via ControlProtocol)
+#### External Dependencies ✅
+**All already in Cargo.toml:**
+- tokio - Async runtime
+- async-trait - Async trait support
+- serde + serde_json - Serialization
+- uuid - (Optional) Request tracking
 
-**No new dependencies needed.**
+**No new dependencies needed!**
 
-### Integration Risks
+#### Internal Dependencies ✅
+- ✅ **rusty_claw-91n** (Control Protocol handler) - **COMPLETED**
+- ✅ Transport layer - Already implemented
+- ✅ Error types - Already implemented
+- ✅ Options types - Already implemented
 
-**Risk:** Message receiver can only be called once.
-**Mitigation:** Store in `Arc<Mutex<Option<>>>`, take out when needed. Document single-use behavior.
+### Risks & Mitigation
 
-**Risk:** Control message routing complexity.
-**Mitigation:** Route internally in ResponseStream.poll_next(). User never sees control messages.
+#### 1. JSON-RPC Protocol Compliance
+**Risk:** Incorrect JSON-RPC 2.0 format could break CLI communication
 
-**Risk:** Concurrent access to session state.
-**Mitigation:** Use Arc<Mutex<>> for shared state. All operations are async-safe.
+**Mitigation:**
+- Use explicit JSON-RPC helper functions
+- Validate against MCP specification
+- Comprehensive tests for all response formats
 
-**Risk:** Stream lifetime and ownership.
-**Mitigation:** Follow QueryStream pattern - ResponseStream owns what it needs.
+#### 2. Tool Handler Thread Safety
+**Risk:** ToolHandler trait must be Send + Sync for concurrent execution
 
-### Breaking Changes
+**Mitigation:**
+- Enforce Send + Sync bounds in trait definition
+- Use Arc<dyn ToolHandler> for shared ownership
+- Test concurrent execution
 
-**None expected.** This is a new module with no impact on existing APIs.
+#### 3. Error Propagation Layers
+**Risk:** Errors can occur at multiple layers
 
-## Success Criteria (Acceptance Criteria)
+**Mitigation:**
+- Clear error propagation path: ClawError → JSON-RPC error codes
+- Test error cases at each layer
+- Document error handling strategy
 
-From task definition:
+---
 
-1. ✅ **ClaudeClient struct** - Session management
-   - Maintains long-running session connection
-   - Configuration for model, system prompt, permission mode
-   - Thread-safe (Send + Sync)
+## Implementation Timeline
 
-2. ✅ **Message sending** - Interactive messaging
-   - `send_message()` method that queues messages
-   - Support for streaming responses via Control Protocol
-   - Async API using tokio
+**Total Estimated Time:** ~9.5 hours
 
-3. ✅ **Streaming responses** - Receive agent outputs
-   - Stream responses from the agent
-   - Support for delta updates (text/tool_use streaming)
-   - Handle end-of-stream signals
+| Phase | Duration | Dependencies |
+|-------|----------|--------------|
+| 1. Core Types | 90 min | None |
+| 2. SdkMcpTool | 60 min | Phase 1 |
+| 3. SdkMcpServer Core | 90 min | Phase 2 |
+| 4. JSON-RPC Routing | 120 min | Phase 3 |
+| 5. Integration | 60 min | Phase 4 |
+| 6. Module Integration | 30 min | Phase 5 |
+| 7. Tests | 120 min | Phase 6 |
+| 8. Documentation | 60 min | Phase 7 |
+| 9. Verification | 30 min | Phase 8 |
 
-4. ✅ **Session control** - Interrupt and mode changes
-   - `interrupt()` method to stop current streaming
-   - Change permission_mode during session
-   - Change model during session via control protocol
+---
 
-5. ✅ **Integration with Control Protocol** - Use existing infrastructure
-   - Leverage rusty_claw-91n (ControlProtocolHandler)
-   - Use rusty_claw-sna patterns (query() function)
-   - Work with existing Transport and Message layers
+## Downstream Impact
 
-6. ✅ **Comprehensive tests**
-   - Unit tests for client operations
-   - Integration tests with mock control protocol
-   - Streaming response tests
-   - ~20-30 tests, zero clippy warnings
+**This task unblocks 2 P2/P3 tasks:**
 
-7. ✅ **Complete documentation**
-   - Module-level docs with usage examples
-   - Examples showing session management and streaming
-   - API documentation for all public methods
+### 1. rusty_claw-zyo - Implement #[claw_tool] proc macro [P2]
+**Why Blocked:** Proc macro needs SdkMcpTool and ToolHandler trait to generate code
 
-## Estimated Time
+### 2. rusty_claw-bkm - Write examples [P3]
+**Why Blocked:** Examples need working MCP server to demonstrate tool registration
 
-**Total:** ~9.5 hours (570 minutes)
+---
 
-**Breakdown by phase:**
-- Phase 1: Basic Structure - 60 min
-- Phase 2: Session Management - 90 min
-- Phase 3: Message Sending - 90 min
-- Phase 4: Streaming Response - 120 min
-- Phase 5: Control Operations - 60 min
-- Phase 6: Handler Registration - 30 min
-- Phase 7: Integration Tests - 90 min
-- Phase 8: Documentation - 60 min
-- Phase 9: Verification - 30 min
+## Example Usage
 
-**Notes:**
-- This is comprehensive implementation with thorough testing
-- Production-ready quality standards
-- No cutting corners on tests or documentation
+```rust
+use rusty_claw::prelude::*;
+use async_trait::async_trait;
+use serde_json::{json, Value};
 
-## Next Steps
+// Define a tool handler
+struct CalculatorHandler;
 
-1. ✅ Investigation complete
-2. → Start Phase 1: Create basic structure
-3. → Iterate through phases 2-9
-4. → Final verification and close task
+#[async_trait]
+impl ToolHandler for CalculatorHandler {
+    async fn call(&self, args: Value) -> Result<ToolResult, ClawError> {
+        let a = args["a"].as_f64().unwrap_or(0.0);
+        let b = args["b"].as_f64().unwrap_or(0.0);
+        let result = a + b;
+        Ok(ToolResult::text(format!("Result: {}", result)))
+    }
+}
 
-## References
+// Create a tool
+let tool = SdkMcpTool::new(
+    "add",
+    "Add two numbers",
+    json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "number" },
+            "b": { "type": "number" }
+        },
+        "required": ["a", "b"]
+    }),
+    Arc::new(CalculatorHandler),
+);
 
-**Python SDK:**
-- https://github.com/anthropics/claude-agent-sdk-python
+// Create and register server
+let mut server = SdkMcpServerImpl::new("calculator", "1.0.0");
+server.register_tool(tool);
 
-**Related tasks:**
-- rusty_claw-91n: Control Protocol handler (COMPLETE)
-- rusty_claw-sna: query() function (COMPLETE)
+// Register with registry
+let mut registry = SdkMcpServerRegistry::new();
+registry.register(server);
 
-**Downstream blockers:**
-- rusty_claw-isy: Add integration tests [P2]
-- rusty_claw-b4s: Implement subagent support [P3]
-- rusty_claw-bkm: Write examples [P3]
+// Register as McpMessageHandler
+control_protocol
+    .handlers()
+    .await
+    .register_mcp_message(Arc::new(registry));
+```
+
+---
+
+## Investigation Complete ✅
+
+**Status:** Ready to begin **Phase 1: Core Types**
+
+**Next Steps:**
+1. Create `crates/rusty_claw/src/mcp_server.rs`
+2. Implement ToolContent enum
+3. Implement ToolResult struct
+4. Implement ToolHandler trait
+5. Write initial tests
+
+**Estimated Completion:** Phase 1 complete in ~90 minutes
+
+---
+
+*Investigation conducted: 2026-02-13*
+*Ready for implementation: ✅*

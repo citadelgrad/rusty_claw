@@ -47,9 +47,7 @@ pub mod transport;
 pub mod control;
 
 /// Model Context Protocol (MCP) integration
-///
-/// MCP integration will be added in future tasks
-pub mod mcp {}
+pub mod mcp_server;
 
 /// Hook system for lifecycle events
 pub mod hooks;
@@ -81,11 +79,15 @@ pub mod prelude {
     //!
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
+    pub use crate::client::{ClaudeClient, ResponseStream};
     pub use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
     pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
     pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
     pub use crate::hooks::{HookCallback, HookContext, HookInput, HookResponse, PermissionDecision};
+    pub use crate::mcp_server::{
+        SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent, ToolHandler, ToolResult,
+    };
     pub use crate::messages::{
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
@@ -94,5 +96,4 @@ pub mod prelude {
     pub use crate::permissions::DefaultPermissionHandler;
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
-    pub use crate::client::{ClaudeClient, ResponseStream};
 }

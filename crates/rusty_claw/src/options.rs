@@ -91,10 +91,28 @@ pub struct McpServerConfig {
     // Detailed implementation in future tasks (SPEC.md section 7.1)
 }
 
-/// SDK-managed MCP server (placeholder for future MCP tasks)
+/// SDK-managed MCP server configuration
+///
+/// This struct represents the minimal configuration needed to register
+/// an SDK-hosted MCP server with the Claude CLI during initialization.
+/// The actual server implementation is in [`crate::mcp_server::SdkMcpServerImpl`].
+///
+/// # Example
+///
+/// ```
+/// use rusty_claw::options::SdkMcpServer;
+///
+/// let config = SdkMcpServer {
+///     name: "my_server".to_string(),
+///     version: "1.0.0".to_string(),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkMcpServer {
-    // Detailed implementation in future tasks (SPEC.md section 7.2)
+    /// Server name (must be unique)
+    pub name: String,
+    /// Server version
+    pub version: String,
 }
 
 /// Hook event type - triggers for lifecycle callbacks
