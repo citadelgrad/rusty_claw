@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess_simple_001","tools":[{"name":"bash","description":"Execute shell commands"}],"mcp_servers":[]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The current directory contains the following files:\\n- README.md\\n- src/\\n- Cargo.toml"}]},"duration_ms":142}
+{"type":"result","subtype":"success","result":"Listed directory contents successfully","duration_ms":156,"num_turns":1,"usage":{"input_tokens":45,"output_tokens":28}}

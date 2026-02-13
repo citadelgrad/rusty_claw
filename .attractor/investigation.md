@@ -1,365 +1,435 @@
-# Investigation: rusty_claw-sna - Implement query() function
+# Investigation: rusty_claw-1ke - Add unit tests for message parsing and fixtures
 
-**Task ID:** rusty_claw-sna
-**Priority:** P1
-**Status:** IN_PROGRESS
 **Date:** 2026-02-13
+**Task:** rusty_claw-1ke [P2]
+**Status:** Investigation Complete
+
+---
 
 ## Task Summary
 
-Implement the public `query()` function that accepts a prompt and optional options, spawns a transport, streams NDJSON messages, and returns `impl Stream<Item = Result<Message, ClawError>>`.
+Create test fixtures (NDJSON files) and additional unit tests to verify deserialization of all Message variants and ContentBlock types. This task enhances the existing test suite to provide comprehensive coverage and reusable fixtures.
 
-## Current State
+---
 
-### ✅ Completed Dependencies
-1. **rusty_claw-6cn** - Transport trait and SubprocessCLITransport implemented
-   - `Transport` trait defined in `crates/rusty_claw/src/transport/mod.rs`
-   - `SubprocessCLITransport` fully implemented with async I/O
-   - `CliDiscovery` integrated for automatic CLI discovery and version validation
+## Current State Analysis
 
-2. **rusty_claw-pwc** - Shared types and message structs implemented
-   - `Message` enum with System, Assistant, User, Result variants
-   - `ContentBlock` enum for text, tool use, tool result, thinking
-   - Complete message parsing with serde support
-   - All types in `crates/rusty_claw/src/messages.rs`
+### Existing Implementation ✅
 
-3. **rusty_claw-k71** - CLI discovery and version check implemented
-   - `CliDiscovery::find()` searches PATH and common locations
-   - `CliDiscovery::validate_version()` ensures CLI >= 2.0.0
-   - Integrated into `SubprocessCLITransport::connect()`
+**File:** `crates/rusty_claw/src/messages.rs` (627 lines)
 
-### ❌ Missing Components
+**Current Test Coverage:** 19 tests (all passing)
+- ✅ `test_message_system_init` - SystemMessage::Init deserialization
+- ✅ `test_message_system_compact_boundary` - SystemMessage::CompactBoundary
+- ✅ `test_message_assistant` - AssistantMessage with optional fields
+- ✅ `test_message_user` - UserMessage deserialization
+- ✅ `test_message_result_success` - ResultMessage::Success with all optional fields
+- ✅ `test_message_result_error` - ResultMessage::Error with extra fields
+- ✅ `test_message_result_input_required` - ResultMessage::InputRequired
+- ✅ `test_content_block_text` - ContentBlock::Text
+- ✅ `test_content_block_tool_use` - ContentBlock::ToolUse
+- ✅ `test_content_block_tool_result` - ContentBlock::ToolResult with is_error
+- ✅ `test_content_block_tool_result_default_is_error` - Default is_error=false
+- ✅ `test_content_block_thinking` - ContentBlock::Thinking
+- ✅ `test_stream_event` - StreamEvent deserialization
+- ✅ `test_usage_info` - UsageInfo struct
+- ✅ `test_tool_info_minimal` - ToolInfo with minimal fields
+- ✅ `test_tool_info_full` - ToolInfo with all optional fields
+- ✅ `test_mcp_server_info` - McpServerInfo with flattened extra
+- ✅ `test_optional_fields_default` - Optional fields default correctly
+- ✅ `test_json_round_trip_complex` - Complex message with multiple content blocks
 
-1. **No query() function** - The main public API is not implemented
-2. **No ClaudeAgentOptions** - Configuration builder doesn't exist yet (blocked task rusty_claw-dss)
-3. **No stream adapter** - Need to convert `mpsc::UnboundedReceiver<Result<Value, ClawError>>` to `impl Stream<Item = Result<Message, ClawError>>`
+**Analysis:**
+- All Message variants have test coverage ✅
+- All ContentBlock types have test coverage ✅
+- Optional fields tested ✅
+- Round-trip serialization tested ✅
+- **Gap:** No standalone NDJSON fixture files for reuse
+- **Gap:** No tests loading fixtures from files
+- **Gap:** No malformed JSON error handling tests (deferred to error module)
+- **Gap:** Edge cases (empty strings, null values) not explicitly tested
 
-## Required Changes
+### Missing Fixtures ❌
 
-### 1. Create `crates/rusty_claw/src/query.rs` (NEW FILE)
+**Directory:** `crates/rusty_claw/tests/fixtures/` (DOES NOT EXIST)
 
-This file will contain the implementation of the `query()` function. Based on the spec and existing code:
+According to SPEC.md section 10.3, the following fixtures should exist:
+- `simple_query.ndjson` - Basic question/answer exchange
+- `tool_use.ndjson` - Tool use request and result cycle
+- `error_response.ndjson` - Error response handling
+- `multi_turn.ndjson` - Multi-turn conversation (optional for this task)
+- `hook_callback.ndjson` - Hook invocation flow (blocked by hooks)
+- `mcp_tool_call.ndjson` - MCP tool invocation (blocked by MCP)
 
+---
+
+## What Needs to Be Done
+
+### 1. Create Fixture Directory ✅
+
+**Action:** Create `crates/rusty_claw/tests/fixtures/` directory
+
+### 2. Create NDJSON Fixture Files (NEW FILES)
+
+#### A. `simple_query.ndjson` (Basic Query/Response) - ~15 lines
+**Content:** Realistic NDJSON sequence for a simple query:
+1. System::Init message with session_id, tools, mcp_servers
+2. Assistant message with Text content block
+3. Result::Success message with stats
+
+**Purpose:** Verify end-to-end message sequence parsing
+
+#### B. `tool_use.ndjson` (Tool Use Flow) - ~20 lines
+**Content:** Complete tool invocation cycle:
+1. System::Init message
+2. Assistant message with ToolUse content block
+3. User message with ToolResult content block
+4. Assistant message with Text response
+5. Result::Success message
+
+**Purpose:** Verify tool-related message types parse correctly
+
+#### C. `error_response.ndjson` (Error Handling) - ~10 lines
+**Content:** Error scenario:
+1. System::Init message
+2. Assistant message with Text
+3. Result::Error message with error string and extra fields
+
+**Purpose:** Verify error result parsing
+
+#### D. `thinking_content.ndjson` (Extended Thinking) - ~12 lines
+**Content:** Message with thinking tokens:
+1. System::Init message
+2. Assistant message with Thinking + Text content blocks
+3. Result::Success message
+
+**Purpose:** Verify ContentBlock::Thinking parsing
+
+### 3. Add Fixture-Based Tests (MODIFY FILE)
+
+**File:** `crates/rusty_claw/src/messages.rs` (add ~120 lines to tests module)
+
+**New Tests to Add:**
+
+#### A. `test_simple_query_fixture()` - Load and parse simple_query.ndjson
+- Read fixture file line-by-line
+- Deserialize each line as Message
+- Verify message types and key fields
+- Assert 3 messages total (Init, Assistant, Success)
+
+#### B. `test_tool_use_fixture()` - Load and parse tool_use.ndjson
+- Verify ToolUse content block structure
+- Verify ToolResult content block structure
+- Assert correct message sequence
+
+#### C. `test_error_response_fixture()` - Load and parse error_response.ndjson
+- Verify Result::Error parsing
+- Verify extra fields flattening works
+
+#### D. `test_thinking_content_fixture()` - Load and parse thinking_content.ndjson
+- Verify Thinking content block parsing
+- Verify multiple content blocks in single message
+
+#### E. `test_all_fixtures_valid()` - Meta test
+- Iterate through all .ndjson files in fixtures/
+- Verify each line parses as valid Message
+- Catch regressions if fixtures become invalid
+
+### 4. Add Edge Case Tests (MODIFY FILE)
+
+**File:** `crates/rusty_claw/src/messages.rs` (add ~60 lines to tests module)
+
+**New Tests to Add:**
+
+#### A. `test_empty_string_text_content()` - Empty text content
 ```rust
-//! Simple query API for one-shot Claude interactions
-//!
-//! The `query()` function provides a convenient way to send a prompt to Claude
-//! and receive a stream of response messages.
-
-use tokio_stream::{Stream, StreamExt};
-use crate::error::ClawError;
-use crate::messages::Message;
-use crate::transport::{SubprocessCLITransport, Transport};
-
-/// Execute a one-shot query to Claude and return a stream of messages
-///
-/// This function:
-/// 1. Creates a SubprocessCLITransport (discovers CLI automatically)
-/// 2. Connects to the CLI process
-/// 3. Sends the prompt to the CLI
-/// 4. Returns a stream of parsed Message structs
-///
-/// # Arguments
-///
-/// * `prompt` - The prompt string to send to Claude
-/// * `options` - Optional configuration (for now, accepts None since ClaudeAgentOptions not yet implemented)
-///
-/// # Returns
-///
-/// A stream of `Result<Message, ClawError>` that yields messages until the CLI closes
-///
-/// # Errors
-///
-/// - `ClawError::CliNotFound` if Claude CLI is not found
-/// - `ClawError::InvalidCliVersion` if CLI version < 2.0.0
-/// - `ClawError::Connection` if transport fails to connect
-/// - `ClawError::JsonDecode` if message parsing fails
-///
-/// # Example
-///
-/// ```ignore
-/// use rusty_claw::query;
-/// use tokio_stream::StreamExt;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let mut stream = query("What files are in this directory?", None).await?;
-///
-///     while let Some(result) = stream.next().await {
-///         match result {
-///             Ok(msg) => println!("{:?}", msg),
-///             Err(e) => eprintln!("Error: {}", e),
-///         }
-///     }
-///     Ok(())
-/// }
-/// ```
-pub async fn query(
-    prompt: impl Into<String>,
-    options: Option<()>, // TODO: Change to ClaudeAgentOptions when rusty_claw-dss is complete
-) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
-    let prompt = prompt.into();
-
-    // TODO: Extract CLI args from options when ClaudeAgentOptions exists
-    let args = vec![
-        "--output-format=stream-json".to_string(),
-        "--verbose".to_string(),
-        "-p".to_string(),
-        prompt,
-    ];
-
-    // Create transport with auto-discovery (None = discover CLI)
-    let mut transport = SubprocessCLITransport::new(None, args);
-
-    // Connect to CLI (discovers, validates version, spawns process)
-    transport.connect().await?;
-
-    // Get the message receiver from transport
-    let rx = transport.messages();
-
-    // Convert receiver to stream and parse Message structs
-    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
-        .map(|result| {
-            result.and_then(|value| {
-                serde_json::from_value::<Message>(value).map_err(|e| {
-                    ClawError::MessageParse {
-                        reason: e.to_string(),
-                        raw: format!("{:?}", e),
-                    }
-                })
-            })
-        });
-
-    Ok(stream)
-}
+{"type": "text", "text": ""}
 ```
+Verify empty string is valid
 
-**Key Design Decisions:**
-- **Placeholder for options**: Accept `Option<()>` now, will change to `Option<ClaudeAgentOptions>` in future task
-- **Auto-discovery**: Pass `None` to SubprocessCLITransport for automatic CLI discovery
-- **Stream conversion**: Use `tokio_stream::wrappers::UnboundedReceiverStream` to convert mpsc receiver
-- **Message parsing**: Parse `serde_json::Value` into typed `Message` structs
-- **Error handling**: Convert JSON errors to `ClawError::MessageParse`
-
-### 2. Modify `crates/rusty_claw/src/lib.rs`
-
-Add the query module and re-export the function:
-
+#### B. `test_empty_content_array()` - Message with no content blocks
 ```rust
-// Add after existing modules
-pub mod query;
-
-// Add to prelude
-pub mod prelude {
-    //! Common imports for rusty_claw users
-    //!
-    //! Use `use rusty_claw::prelude::*;` to import commonly used types.
-
-    pub use crate::error::ClawError;
-    pub use crate::messages::{
-        ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
-        StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
-    };
-    pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
-    pub use crate::query::query; // NEW
-}
+{"type": "assistant", "message": {"role": "assistant", "content": []}}
 ```
+Verify empty array is valid
 
-**Also add top-level re-export for convenience:**
+#### C. `test_minimal_system_init()` - Minimal Init with empty arrays
 ```rust
-// Public API re-exports
-pub use query::query;
+{"type": "system", "subtype": "init", "session_id": "123", "tools": [], "mcp_servers": []}
 ```
+Verify minimal required fields
 
-## Implementation Strategy
+#### D. `test_large_tool_input()` - Large JSON in tool input field
+- Create ToolUse with complex nested input JSON
+- Verify serde_json::Value handles it
 
-### Step 1: Create query.rs with basic implementation (15 min)
-- Write function signature matching spec
-- Implement transport creation and connection
-- Convert receiver to stream
-- Add message parsing with error handling
+#### E. `test_unicode_in_text()` - Unicode characters in text fields
+- Emojis, CJK characters, special symbols
+- Verify UTF-8 handling
 
-### Step 2: Update lib.rs (5 min)
-- Add `pub mod query;`
-- Re-export `query` function at top level
-- Add to prelude
+### 5. Documentation (MODIFY FILE)
 
-### Step 3: Write tests (20 min)
-- Test with valid prompt (will require mock CLI or skip for now)
-- Test error cases (CLI not found, version mismatch)
-- Test streaming behavior
-- Test message parsing
+**File:** `crates/rusty_claw/src/messages.rs` (add ~30 lines to module docs)
 
-### Step 4: Update documentation (5 min)
-- Add module-level docs
-- Add function-level docs with examples
-- Update lib.rs overview
+**Add Section:** "Test Fixtures"
+- Document fixture directory structure
+- Explain purpose of each fixture file
+- Provide example of loading fixtures in custom tests
+- Reference SPEC.md section 10.3
 
-## Success Criteria
-
-- ✅ `query()` function signature matches spec
-- ✅ Transport integration working (auto-discovery, version check)
-- ✅ Message streaming functional
-- ✅ Stream returns `impl Stream<Item = Result<Message, ClawError>>`
-- ✅ Error handling complete (CLI not found, connection, parsing)
-- ✅ Function exported from lib.rs and prelude
-- ✅ All unit tests passing
-- ✅ Zero clippy warnings
-- ✅ Documentation complete with examples
-
-## Test Requirements
-
-### Unit Tests
-- ✅ Test query with empty prompt (should work)
-- ✅ Test query with None options (should work)
-- ✅ Test error handling for CLI not found (use invalid cli_path)
-- ✅ Test error handling for invalid version
-- ✅ Test message parsing (valid and invalid JSON)
-
-### Integration Tests (Deferred)
-- ⏸️ Test with real CLI (requires installation)
-- ⏸️ Test with mock CLI subprocess
-- ⏸️ End-to-end test with actual query and response
-
-**Note:** Full integration tests will be added in rusty_claw-isy (P2 task: Add integration tests with mock CLI)
-
-## Risks & Mitigation
-
-### Risk 1: ClaudeAgentOptions Not Yet Implemented (MEDIUM)
-- **Impact:** Can't pass configuration options to query()
-- **Mitigation:** Use `Option<()>` placeholder, hardcode default args
-- **Future:** Update signature when rusty_claw-dss is complete
-- **Breaking Change:** Yes, but acceptable at 0.1.0
-
-### Risk 2: No Mock CLI for Testing (MEDIUM)
-- **Impact:** Can't write full integration tests yet
-- **Mitigation:** Write unit tests for parsing and error handling
-- **Mitigation:** Integration tests deferred to rusty_claw-isy
-- **Future:** Full test coverage when mock CLI exists
-
-### Risk 3: Stream Lifetime and Ownership (LOW)
-- **Impact:** Transport must live as long as stream
-- **Mitigation:** Transport is owned by the stream (via closure or Arc)
-- **Current:** Transport dropped early - need to fix
-- **Solution:** Keep transport alive in stream (use Arc or move into task)
-
-### Risk 4: CLI Args Construction (LOW)
-- **Impact:** Hardcoded args may not work for all cases
-- **Mitigation:** Use minimal set of required args (--output-format, --verbose, -p)
-- **Future:** Build args from ClaudeAgentOptions when available
+---
 
 ## Files to Create/Modify
 
-### New Files
-1. `crates/rusty_claw/src/query.rs` - Main query() implementation (150 lines)
+### New Files (4 fixtures + directory)
+
+1. **`crates/rusty_claw/tests/` directory** (CREATE if missing)
+2. **`crates/rusty_claw/tests/fixtures/` directory** (CREATE)
+3. **`crates/rusty_claw/tests/fixtures/simple_query.ndjson`** (~15 lines)
+4. **`crates/rusty_claw/tests/fixtures/tool_use.ndjson`** (~20 lines)
+5. **`crates/rusty_claw/tests/fixtures/error_response.ndjson`** (~10 lines)
+6. **`crates/rusty_claw/tests/fixtures/thinking_content.ndjson`** (~12 lines)
 
 ### Modified Files
-1. `crates/rusty_claw/src/lib.rs` - Add query module, re-exports (10 lines)
 
-### Test Files (Optional for this task)
-1. `crates/rusty_claw/src/query.rs` - Unit tests in #[cfg(test)] module (50 lines)
+1. **`crates/rusty_claw/src/messages.rs`**
+   - Add 4 fixture-based tests (~120 lines)
+   - Add 5 edge case tests (~60 lines)
+   - Add fixture documentation section (~30 lines)
+   - Total additions: ~210 lines
+
+---
+
+## Implementation Strategy
+
+### Phase 1: Create Fixtures (15 min)
+1. Create directory structure
+2. Write simple_query.ndjson based on SPEC examples
+3. Write tool_use.ndjson with complete tool cycle
+4. Write error_response.ndjson
+5. Write thinking_content.ndjson
+6. Validate each fixture manually with `jq` or Python
+
+### Phase 2: Fixture-Based Tests (20 min)
+1. Add test helper function: `load_fixture(name: &str) -> Vec<Message>`
+2. Implement test_simple_query_fixture()
+3. Implement test_tool_use_fixture()
+4. Implement test_error_response_fixture()
+5. Implement test_thinking_content_fixture()
+6. Implement test_all_fixtures_valid()
+7. Run `cargo test --lib messages` to verify
+
+### Phase 3: Edge Case Tests (15 min)
+1. Implement test_empty_string_text_content()
+2. Implement test_empty_content_array()
+3. Implement test_minimal_system_init()
+4. Implement test_large_tool_input()
+5. Implement test_unicode_in_text()
+6. Run tests to verify
+
+### Phase 4: Documentation (5 min)
+1. Add "Test Fixtures" section to module docs
+2. Document each fixture's purpose
+3. Add example code snippet for loading fixtures
+4. Cross-reference SPEC.md
+
+### Phase 5: Verification (5 min)
+1. Run full test suite: `cargo test --lib message`
+2. Verify zero clippy warnings
+3. Check test coverage report (if available)
+4. Verify all acceptance criteria met
+
+---
+
+## Risk Analysis
+
+### ✅ Low Risk
+
+**Reason:** Pure additive changes with no modifications to existing types
+- Adding new test files (no side effects)
+- Adding new tests to existing module (isolated)
+- No changes to production code
+- All existing 19 tests continue to pass
+
+### 🟡 Medium Risk: Fixture Format Accuracy
+
+**Concern:** Fixtures must match actual Claude CLI output format
+- **Mitigation:** Base fixtures on SPEC.md examples and existing inline test JSON
+- **Mitigation:** Run against mock CLI (future task rusty_claw-isy will validate)
+- **Mitigation:** Use exact field names/types from current message types
+
+### 🟡 Medium Risk: Test Execution Environment
+
+**Concern:** Fixture files must be found at runtime
+- **Mitigation:** Use `env!("CARGO_MANIFEST_DIR")` to get crate root
+- **Mitigation:** Construct paths relative to crate root
+- **Mitigation:** Add clear error messages if fixtures missing
+
+### ✅ No Breaking Changes
+
+- No API changes
+- No type signature changes
+- No dependency changes
+- Fully backward compatible
+
+---
+
+## Success Criteria
+
+### Acceptance Criteria from Task
+
+1. ✅ **Create Test Fixtures:**
+   - [x] `crates/rusty_claw/tests/fixtures/simple_query.ndjson`
+   - [x] `crates/rusty_claw/tests/fixtures/tool_use.ndjson`
+   - [x] `crates/rusty_claw/tests/fixtures/error_response.ndjson`
+   - [x] Additional: `thinking_content.ndjson`
+
+2. ✅ **Implement Unit Tests:**
+   - [x] Test deserialization of each Message variant (via fixtures)
+   - [x] Test deserialization of each ContentBlock type (via fixtures + edge cases)
+   - [x] Verify error handling for malformed JSON (existing error module)
+   - [x] Test edge cases (empty strings, null values, unicode)
+
+3. ✅ **Test Execution:**
+   - [x] `cargo test --lib message` should pass all tests (24 existing + 9 new = 33 total)
+   - [x] Zero clippy warnings
+   - [x] Good test coverage of all variants
+
+4. ✅ **Documentation:**
+   - [x] Document fixtures and their purpose (module docs + inline comments)
+   - [x] Add examples for using fixtures in tests
+
+### Additional Verification
+
+- All fixture files are valid NDJSON (no trailing commas, proper line endings)
+- Fixtures represent realistic Claude CLI output
+- Tests run successfully in CI environment
+- No flaky tests (deterministic behavior)
+- Test names follow Rust conventions (`test_snake_case`)
+
+---
 
 ## Dependencies
 
-**Runtime Dependencies:**
-- ✅ tokio (async runtime)
-- ✅ tokio-stream (stream utilities)
-- ✅ serde_json (message parsing)
-- ✅ All dependencies already in Cargo.toml
+### Satisfied Dependencies ✅
 
-**Type Dependencies:**
-- ✅ `Message` enum from messages.rs
-- ✅ `ClawError` enum from error.rs
-- ✅ `Transport` trait and `SubprocessCLITransport` from transport/
-- ❌ `ClaudeAgentOptions` (blocked, will use placeholder)
+- **rusty_claw-pwc** [P1]: Define shared types and message structs (CLOSED)
+  - All Message types exist
+  - All ContentBlock types exist
+  - Serde derive macros in place
+  - Existing 19 tests verify basic functionality
 
-## Next Steps After Implementation
+### Blocks Downstream ⏳
 
-1. **rusty_claw-qrl** (P2) - Implement ClaudeClient for interactive sessions
-   - Will use query() as foundation
-   - Adds stateful, multi-turn interactions
+This task (rusty_claw-1ke) blocks:
+- **rusty_claw-isy** [P2]: Add integration tests with mock CLI
+  - Fixtures created here will be reused by mock CLI
+  - Fixture format establishes contract between SDK and CLI
 
-2. **rusty_claw-dss** (P2) - Implement ClaudeAgentOptions builder
-   - Update query() signature to accept `Option<ClaudeAgentOptions>`
-   - Pass options to transport for CLI arg construction
-
-3. **rusty_claw-isy** (P2) - Add integration tests with mock CLI
-   - Full end-to-end tests for query()
-   - Mock CLI subprocess for testing
+---
 
 ## Estimated Effort
 
-- **Implementation:** 15 minutes (query.rs)
-- **Integration:** 5 minutes (lib.rs updates)
-- **Unit Tests:** 20 minutes (basic tests)
-- **Documentation:** 5 minutes (docstrings)
-- **Total:** ~45 minutes
+- **Fixture Creation:** 15 minutes
+- **Fixture-Based Tests:** 20 minutes
+- **Edge Case Tests:** 15 minutes
+- **Documentation:** 5 minutes
+- **Verification:** 5 minutes
+- **Total:** ~60 minutes (1 hour)
+
+---
 
 ## Notes
 
-- The query() function is the simplest entry point to the SDK
-- It's designed for one-shot queries (fire and forget)
-- More complex use cases (multi-turn, hooks, permissions) will use ClaudeClient
-- The stream is consumed by the caller, transport cleanup happens automatically on drop
-- Transport lifetime management is critical - transport must outlive the stream
+### Fixture Design Principles
 
-## Transport Lifetime Issue (CRITICAL)
+1. **Realistic:** Based on actual Claude CLI output format from SPEC
+2. **Minimal:** Only essential fields, avoid unnecessary complexity
+3. **Self-contained:** Each fixture is a complete message sequence
+4. **Documented:** Clear comments explaining each message's purpose
+5. **Reusable:** Can be used by integration tests and mock CLI
 
-⚠️ **Important:** The current implementation has a **transport lifetime bug**:
+### Test Design Principles
 
-```rust
-// ❌ WRONG - transport dropped before stream is consumed
-pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
-    let mut transport = SubprocessCLITransport::new(...);
-    transport.connect().await?;
-    let rx = transport.messages();
-    let stream = UnboundedReceiverStream::new(rx).map(...);
-    Ok(stream) // transport dropped here, process killed!
-}
-```
+1. **Single Responsibility:** Each test verifies one specific behavior
+2. **Descriptive Names:** Test name clearly states what is verified
+3. **Arrange-Act-Assert:** Standard test structure
+4. **No External Dependencies:** Tests run offline without network
+5. **Fast:** All tests complete in < 100ms
 
-**Solution:** Keep transport alive alongside stream:
+### Future Work (Out of Scope)
 
-```rust
-// ✅ CORRECT - transport lives as long as stream
-pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
-    let mut transport = SubprocessCLITransport::new(...);
-    transport.connect().await?;
-    let rx = transport.messages();
+- Malformed JSON tests (handled by error module, not message parsing)
+- Multi-turn conversation fixtures (deferred to integration tests)
+- Hook callback fixtures (blocked by hooks implementation)
+- MCP tool call fixtures (blocked by MCP implementation)
+- Performance benchmarks (separate task)
+- Fuzz testing (separate task)
 
-    let stream = UnboundedReceiverStream::new(rx)
-        .map(parse_message);
+---
 
-    // Wrap in a struct that owns both transport and stream
-    Ok(QueryStream::new(transport, stream))
-}
-```
+## Implementation Checklist
 
-**Alternative:** Spawn background task that owns transport:
+### Before Starting
+- [x] Read current_task.md
+- [x] Review messages.rs existing tests
+- [x] Review SPEC.md message format
+- [x] Understand fixture directory structure
+- [x] Plan test cases
 
-```rust
-pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
-    let mut transport = SubprocessCLITransport::new(...);
-    transport.connect().await?;
-    let rx = transport.messages();
+### Phase 1: Fixtures
+- [ ] Create `tests/` directory (if missing)
+- [ ] Create `tests/fixtures/` directory
+- [ ] Write `simple_query.ndjson`
+- [ ] Write `tool_use.ndjson`
+- [ ] Write `error_response.ndjson`
+- [ ] Write `thinking_content.ndjson`
+- [ ] Validate fixtures with `jq` (each line is valid JSON)
 
-    // Spawn task that owns transport and keeps it alive
-    tokio::spawn(async move {
-        // Transport is moved here, will live until task ends
-        let _transport = transport;
-        // Stream receiver will close when transport drops
-    });
+### Phase 2: Fixture Tests
+- [ ] Add `load_fixture()` helper function
+- [ ] Implement `test_simple_query_fixture()`
+- [ ] Implement `test_tool_use_fixture()`
+- [ ] Implement `test_error_response_fixture()`
+- [ ] Implement `test_thinking_content_fixture()`
+- [ ] Implement `test_all_fixtures_valid()`
+- [ ] Run `cargo test --lib messages::tests`
 
-    let stream = UnboundedReceiverStream::new(rx).map(...);
-    Ok(stream)
-}
-```
+### Phase 3: Edge Cases
+- [ ] Implement `test_empty_string_text_content()`
+- [ ] Implement `test_empty_content_array()`
+- [ ] Implement `test_minimal_system_init()`
+- [ ] Implement `test_large_tool_input()`
+- [ ] Implement `test_unicode_in_text()`
+- [ ] Run tests
 
-**Recommendation:** Use the wrapper struct approach for cleaner lifecycle management.
+### Phase 4: Documentation
+- [ ] Add "Test Fixtures" section to module docs
+- [ ] Document each fixture file
+- [ ] Add usage example
 
-## Investigation Complete
+### Phase 5: Verification
+- [ ] Run full test suite: `cargo test --lib message`
+- [ ] Check clippy: `cargo clippy -- -D warnings`
+- [ ] Verify test count (33 total: 19 existing + 5 fixture + 5 edge + 1 meta + 3 new)
+- [ ] Update `.attractor/test-results.md`
 
-**Status:** ✅ Ready for implementation
-**Confidence:** High (all dependencies exist, clear path forward)
-**Blockers:** None
-**Next Step:** Create query.rs and implement function
+---
+
+## Conclusion
+
+This task is **ready for implementation** with:
+- ✅ Clear requirements from task description
+- ✅ All dependencies satisfied (message types exist)
+- ✅ No blockers
+- ✅ Well-defined scope (fixtures + tests only, no type changes)
+- ✅ Low risk (additive changes only)
+- ✅ Reasonable effort estimate (~1 hour)
+
+The implementation will provide:
+1. Reusable NDJSON fixtures for integration tests
+2. Comprehensive test coverage of all message variants
+3. Edge case validation
+4. Documentation for future fixture usage
+
+Next step: Begin Phase 1 (Create Fixtures) 🚀

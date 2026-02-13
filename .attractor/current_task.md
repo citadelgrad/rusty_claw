@@ -1,75 +1,52 @@
-# Current Task: rusty_claw-sna
+# Current Task: rusty_claw-1ke
 
-**Task ID:** rusty_claw-sna
-**Status:** IN_PROGRESS
-**Priority:** P1
-**Type:** Task
-**Owner:** Scott Nixon
-
-## Title
-Implement query() function
+## Task Details
+- **ID:** rusty_claw-1ke
+- **Title:** Add unit tests for message parsing and fixtures
+- **Type:** task
+- **Priority:** P2 (Medium)
+- **Status:** in_progress
+- **Owner:** Scott Nixon
 
 ## Description
-Implement the public query() function that accepts a prompt and options, spawns a transport, streams NDJSON messages, and returns impl Stream<Item = Result<Message, ClawError>>.
+Create test fixtures (simple_query.ndjson, tool_use.ndjson, error_response.ndjson, etc.) and unit tests to verify deserialization of all Message variants and ContentBlock types.
 
-## Dependencies (All Completed ✅)
-- ✅ rusty_claw-6cn: Implement Transport trait and SubprocessCLITransport (P1)
-- ✅ rusty_claw-pwc: Define shared types and message structs (P1)
-- ✅ rusty_claw-k71: Implement CLI discovery and version check (P2)
+## Dependencies
+- ✅ **rusty_claw-pwc:** Define shared types and message structs (COMPLETED)
 
 ## Blocks
-- ○ rusty_claw-qrl: Implement ClaudeClient for interactive sessions (P2)
+- ⏳ **rusty_claw-isy:** Add integration tests with mock CLI (blocked by this task)
 
-## Key Requirements
+## Acceptance Criteria
 
-1. **Function Signature:**
-   ```rust
-   pub async fn query(
-       prompt: impl Into<String>,
-       options: Option<ClaudeAgentOptions>,
-   ) -> impl Stream<Item = Result<Message, ClawError>>
-   ```
+1. **Create Test Fixtures:**
+   - `crates/rusty_claw/tests/fixtures/simple_query.ndjson` - Simple query/response exchange
+   - `crates/rusty_claw/tests/fixtures/tool_use.ndjson` - Tool use request and result
+   - `crates/rusty_claw/tests/fixtures/error_response.ndjson` - Error response handling
+   - Additional variants as needed for comprehensive coverage
 
-2. **Core Functionality:**
-   - Accept a prompt string and optional ClaudeAgentOptions
-   - Automatically discover and launch the Claude CLI
-   - Spawn a SubprocessCLITransport connection
-   - Send the query message to the transport
-   - Stream NDJSON responses as Message structs
-   - Handle errors gracefully
+2. **Implement Unit Tests:**
+   - Test deserialization of each Message variant
+   - Test deserialization of each ContentBlock type
+   - Verify error handling for malformed JSON
+   - Test edge cases (empty strings, null values, etc.)
 
-3. **Message Flow:**
-   - Create Transport connection via SubprocessCLITransport::connect()
-   - Send Control::Query message with prompt and options
-   - Read NDJSON stream of responses
-   - Parse each line as a Message
-   - Yield results to the stream
-   - Handle transport errors and convert to ClawError
+3. **Test Execution:**
+   - `cargo test --lib message` should pass all tests
+   - Zero clippy warnings
+   - Good test coverage of all variants
 
-4. **Error Handling:**
-   - Return ClawError for CLI not found, version mismatch, transport errors, parsing errors, etc.
+4. **Documentation:**
+   - Document fixtures and their purpose
+   - Add examples for using fixtures in tests
 
-5. **Return Type:**
-   - Use Rust streams (async generator or futures::Stream)
-   - Return `impl Stream<Item = Result<Message, ClawError>>`
-   - Support cancellation via drop
+## Key Files
+- `crates/rusty_claw/src/message.rs` - Message types and tests
+- `crates/rusty_claw/tests/fixtures/` - Test fixtures directory (to be created)
 
-## Files to Create/Modify
-- Modify: `crates/rusty_claw/src/lib.rs` - Add query() function
-- Potentially create: `crates/rusty_claw/src/client.rs` - Query implementation
-
-## Test Coverage Needed
-- Test with valid prompt
-- Test with ClaudeAgentOptions
-- Test error cases (CLI not found, invalid version, etc.)
-- Test streaming behavior
-- Test message parsing
-
-## Success Criteria
-- ✅ Function signature matches spec
-- ✅ Transport integration working
-- ✅ Message streaming functional
-- ✅ Error handling complete
-- ✅ All unit tests passing
-- ✅ Zero clippy warnings
-- ✅ Documentation complete
+## Implementation Notes
+- Fixtures should be representative of real Claude API responses
+- Tests should verify correct deserialization with valid data
+- Error cases tested separately in error module
+- All Message variants need coverage: Text, ToolUse, ToolResult
+- All ContentBlock types need coverage

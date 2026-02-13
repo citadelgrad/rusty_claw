@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess_think_004","tools":[{"name":"bash"}],"mcp_servers":[]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me analyze this request carefully. The user wants to know about files in the directory, so I should use the bash tool to list them. I'll use ls -la for a detailed listing."},{"type":"text","text":"I'll list the files in your directory with detailed information."}]},"duration_ms":234}
+{"type":"result","subtype":"success","result":"Analysis complete","duration_ms":245,"num_turns":1,"usage":{"input_tokens":89,"output_tokens":112}}

@@ -19,6 +19,34 @@
 //! - [`ContentBlock::ToolResult`] - Tool execution results
 //! - [`ContentBlock::Thinking`] - Extended thinking tokens
 //!
+//! # Test Fixtures
+//!
+//! This module includes NDJSON test fixtures in `tests/fixtures/` that represent
+//! realistic message sequences from the Claude Code CLI. These fixtures are used
+//! for testing message deserialization and can be used in custom tests:
+//!
+//! - `simple_query.ndjson` - Basic query/response exchange with system init
+//! - `tool_use.ndjson` - Complete tool invocation cycle with ToolUse and ToolResult
+//! - `error_response.ndjson` - Error result handling scenario
+//! - `thinking_content.ndjson` - Extended thinking tokens with ContentBlock::Thinking
+//!
+//! ## Loading Fixtures in Tests
+//!
+//! ```no_run
+//! use std::fs::File;
+//! use std::io::{BufRead, BufReader};
+//! use rusty_claw::messages::Message;
+//!
+//! let fixture_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/simple_query.ndjson");
+//! let file = File::open(fixture_path).unwrap();
+//! let messages: Vec<Message> = BufReader::new(file)
+//!     .lines()
+//!     .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+//!     .collect();
+//! ```
+//!
+//! See SPEC.md section 10.3 for the complete message format specification.
+//!
 //! # Example
 //!
 //! ```
@@ -621,6 +649,411 @@ mod tests {
                 assert_eq!(assistant_msg.duration_ms, Some(150));
             }
             _ => panic!("Expected Assistant message"),
+        }
+    }
+
+    // === Fixture-Based Tests ===
+
+    /// Helper function to load messages from a fixture file
+    fn load_fixture(name: &str) -> Vec<Message> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+
+        let fixture_path = format!(
+            "{}/tests/fixtures/{}.ndjson",
+            env!("CARGO_MANIFEST_DIR"),
+            name
+        );
+        let file = File::open(&fixture_path)
+            .unwrap_or_else(|e| panic!("Failed to open fixture '{}': {}", fixture_path, e));
+
+        BufReader::new(file)
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line = line.unwrap_or_else(|e| {
+                    panic!("Failed to read line {} from fixture '{}': {}", i + 1, name, e)
+                });
+                serde_json::from_str(&line).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse line {} from fixture '{}': {}\nLine: {}",
+                        i + 1,
+                        name,
+                        e,
+                        line
+                    )
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_simple_query_fixture() {
+        let messages = load_fixture("simple_query");
+        assert_eq!(messages.len(), 3, "Expected 3 messages in simple_query");
+
+        // First message: System::Init
+        match &messages[0] {
+            Message::System(SystemMessage::Init {
+                session_id,
+                tools,
+                mcp_servers,
+                ..
+            }) => {
+                assert_eq!(session_id, "sess_simple_001");
+                assert_eq!(tools.len(), 1);
+                assert_eq!(tools[0].name, "bash");
+                assert_eq!(mcp_servers.len(), 0);
+            }
+            _ => panic!("Expected System::Init as first message"),
+        }
+
+        // Second message: Assistant with Text content
+        match &messages[1] {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.role, "assistant");
+                assert_eq!(assistant_msg.message.content.len(), 1);
+                match &assistant_msg.message.content[0] {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("README.md"));
+                    }
+                    _ => panic!("Expected Text content block"),
+                }
+                assert_eq!(assistant_msg.duration_ms, Some(142));
+            }
+            _ => panic!("Expected Assistant message as second message"),
+        }
+
+        // Third message: Result::Success
+        match &messages[2] {
+            Message::Result(ResultMessage::Success {
+                result,
+                duration_ms,
+                num_turns,
+                usage,
+                ..
+            }) => {
+                assert_eq!(result, "Listed directory contents successfully");
+                assert_eq!(*duration_ms, Some(156));
+                assert_eq!(*num_turns, Some(1));
+                assert!(usage.is_some());
+                let usage = usage.as_ref().unwrap();
+                assert_eq!(usage.input_tokens, 45);
+                assert_eq!(usage.output_tokens, 28);
+            }
+            _ => panic!("Expected Result::Success as third message"),
+        }
+    }
+
+    #[test]
+    fn test_tool_use_fixture() {
+        let messages = load_fixture("tool_use");
+        assert_eq!(messages.len(), 5, "Expected 5 messages in tool_use");
+
+        // First message: System::Init with tools
+        match &messages[0] {
+            Message::System(SystemMessage::Init {
+                session_id,
+                tools,
+                mcp_servers,
+                ..
+            }) => {
+                assert_eq!(session_id, "sess_tool_002");
+                assert_eq!(tools.len(), 1);
+                assert_eq!(tools[0].name, "bash");
+                assert!(tools[0].input_schema.is_some());
+                assert_eq!(mcp_servers.len(), 1);
+                assert_eq!(mcp_servers[0].name, "filesystem");
+            }
+            _ => panic!("Expected System::Init"),
+        }
+
+        // Second message: Assistant with ToolUse
+        match &messages[1] {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.content.len(), 2);
+                // First block: Text
+                match &assistant_msg.message.content[0] {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("check the current directory"));
+                    }
+                    _ => panic!("Expected Text block"),
+                }
+                // Second block: ToolUse
+                match &assistant_msg.message.content[1] {
+                    ContentBlock::ToolUse { id, name, input } => {
+                        assert_eq!(id, "toolu_01ABC");
+                        assert_eq!(name, "bash");
+                        assert_eq!(input["command"], "ls -la");
+                    }
+                    _ => panic!("Expected ToolUse block"),
+                }
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+
+        // Third message: User with ToolResult
+        match &messages[2] {
+            Message::User(user_msg) => {
+                assert_eq!(user_msg.message.content.len(), 1);
+                match &user_msg.message.content[0] {
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } => {
+                        assert_eq!(tool_use_id, "toolu_01ABC");
+                        assert!(!is_error);
+                        let content_str = content.as_str().unwrap();
+                        assert!(content_str.contains("Cargo.toml"));
+                    }
+                    _ => panic!("Expected ToolResult block"),
+                }
+            }
+            _ => panic!("Expected User message"),
+        }
+
+        // Fourth message: Assistant response after tool
+        match &messages[3] {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.content.len(), 1);
+                match &assistant_msg.message.content[0] {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("Rust project"));
+                    }
+                    _ => panic!("Expected Text block"),
+                }
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+
+        // Fifth message: Result::Success
+        match &messages[4] {
+            Message::Result(ResultMessage::Success { num_turns, .. }) => {
+                assert_eq!(*num_turns, Some(2));
+            }
+            _ => panic!("Expected Result::Success"),
+        }
+    }
+
+    #[test]
+    fn test_error_response_fixture() {
+        let messages = load_fixture("error_response");
+        assert_eq!(messages.len(), 3, "Expected 3 messages in error_response");
+
+        // First message: System::Init
+        match &messages[0] {
+            Message::System(SystemMessage::Init { session_id, .. }) => {
+                assert_eq!(session_id, "sess_error_003");
+            }
+            _ => panic!("Expected System::Init"),
+        }
+
+        // Second message: Assistant
+        match &messages[1] {
+            Message::Assistant(_) => {}
+            _ => panic!("Expected Assistant message"),
+        }
+
+        // Third message: Result::Error with extra fields
+        match &messages[2] {
+            Message::Result(ResultMessage::Error { error, extra }) => {
+                assert_eq!(error, "Failed to execute command: permission denied");
+                assert_eq!(extra["error_code"], "EACCES");
+                assert_eq!(extra["exit_code"], 126);
+            }
+            _ => panic!("Expected Result::Error"),
+        }
+    }
+
+    #[test]
+    fn test_thinking_content_fixture() {
+        let messages = load_fixture("thinking_content");
+        assert_eq!(messages.len(), 3, "Expected 3 messages in thinking_content");
+
+        // First message: System::Init
+        match &messages[0] {
+            Message::System(SystemMessage::Init { session_id, .. }) => {
+                assert_eq!(session_id, "sess_think_004");
+            }
+            _ => panic!("Expected System::Init"),
+        }
+
+        // Second message: Assistant with Thinking + Text
+        match &messages[1] {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.content.len(), 2);
+                // First block: Thinking
+                match &assistant_msg.message.content[0] {
+                    ContentBlock::Thinking { thinking } => {
+                        assert!(thinking.contains("analyze this request"));
+                        assert!(thinking.contains("bash tool"));
+                    }
+                    _ => panic!("Expected Thinking block"),
+                }
+                // Second block: Text
+                match &assistant_msg.message.content[1] {
+                    ContentBlock::Text { text } => {
+                        assert!(text.contains("list the files"));
+                    }
+                    _ => panic!("Expected Text block"),
+                }
+                assert_eq!(assistant_msg.duration_ms, Some(234));
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+
+        // Third message: Result::Success
+        match &messages[2] {
+            Message::Result(ResultMessage::Success { usage, .. }) => {
+                assert!(usage.is_some());
+            }
+            _ => panic!("Expected Result::Success"),
+        }
+    }
+
+    #[test]
+    fn test_all_fixtures_valid() {
+        // Meta test: verify all fixtures parse without errors
+        let fixtures = ["simple_query", "tool_use", "error_response", "thinking_content"];
+
+        for fixture_name in &fixtures {
+            let messages = load_fixture(fixture_name);
+            assert!(
+                !messages.is_empty(),
+                "Fixture '{}' should contain at least one message",
+                fixture_name
+            );
+
+            // Verify all messages have valid types
+            for (i, msg) in messages.iter().enumerate() {
+                match msg {
+                    Message::System(_) | Message::Assistant(_) | Message::User(_)
+                    | Message::Result(_) => {}
+                }
+                // If we got here, the message is valid
+                let _ = i; // Use i to avoid unused warning
+            }
+        }
+    }
+
+    // === Edge Case Tests ===
+
+    #[test]
+    fn test_empty_string_text_content() {
+        let json = json!({"type": "text", "text": ""});
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+
+        match block {
+            ContentBlock::Text { text } => {
+                assert_eq!(text, "");
+            }
+            _ => panic!("Expected Text block"),
+        }
+    }
+
+    #[test]
+    fn test_empty_content_array() {
+        let json = json!({
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": []
+            }
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.content.len(), 0);
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+    }
+
+    #[test]
+    fn test_minimal_system_init() {
+        let json = json!({
+            "type": "system",
+            "subtype": "init",
+            "session_id": "min_123",
+            "tools": [],
+            "mcp_servers": []
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::System(SystemMessage::Init {
+                session_id,
+                tools,
+                mcp_servers,
+                ..
+            }) => {
+                assert_eq!(session_id, "min_123");
+                assert_eq!(tools.len(), 0);
+                assert_eq!(mcp_servers.len(), 0);
+            }
+            _ => panic!("Expected System::Init"),
+        }
+    }
+
+    #[test]
+    fn test_large_tool_input() {
+        // Create a complex nested JSON structure
+        let complex_input = json!({
+            "config": {
+                "nested": {
+                    "deeply": {
+                        "structure": ["array", "of", "values"],
+                        "number": 42,
+                        "boolean": true
+                    }
+                },
+                "large_array": vec!["item"; 100]
+            },
+            "metadata": {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "version": "1.0.0"
+            }
+        });
+
+        let json = json!({
+            "type": "tool_use",
+            "id": "tool_large",
+            "name": "complex_tool",
+            "input": complex_input
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "tool_large");
+                assert_eq!(name, "complex_tool");
+                assert_eq!(input["config"]["nested"]["deeply"]["number"], 42);
+                assert_eq!(
+                    input["config"]["large_array"].as_array().unwrap().len(),
+                    100
+                );
+            }
+            _ => panic!("Expected ToolUse block"),
+        }
+    }
+
+    #[test]
+    fn test_unicode_in_text() {
+        let json = json!({
+            "type": "text",
+            "text": "Hello 世界! 🚀 Emoji test: ✅ ❌ 🎉"
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::Text { text } => {
+                assert!(text.contains("世界"));
+                assert!(text.contains("🚀"));
+                assert!(text.contains("✅"));
+            }
+            _ => panic!("Expected Text block"),
         }
     }
 }

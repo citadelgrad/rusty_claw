@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"sess_error_003","tools":[],"mcp_servers":[]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I attempted to process your request but encountered an error."}]},"duration_ms":78}
+{"type":"result","subtype":"error","error":"Failed to execute command: permission denied","error_code":"EACCES","exit_code":126}
