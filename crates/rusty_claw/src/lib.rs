@@ -64,6 +64,12 @@ pub mod error;
 /// Message types and structures
 pub mod messages;
 
+/// Simple query API for one-shot Claude interactions
+pub mod query;
+
+// Public API re-exports
+pub use query::query;
+
 // Prelude module for common imports
 pub mod prelude {
     //! Common imports for rusty_claw users
@@ -75,5 +81,6 @@ pub mod prelude {
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
+    pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }

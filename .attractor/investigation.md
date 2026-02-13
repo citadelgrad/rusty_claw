@@ -1,304 +1,365 @@
-# Investigation: rusty_claw-k71 - Implement CLI discovery and version check
+# Investigation: rusty_claw-sna - Implement query() function
 
-**Task ID:** rusty_claw-k71
-**Priority:** P2
+**Task ID:** rusty_claw-sna
+**Priority:** P1
 **Status:** IN_PROGRESS
 **Date:** 2026-02-13
 
-## Overview
+## Task Summary
 
-Implement CLI discovery logic to find the `claude` binary in multiple locations and validate that its version is >= 2.0.0. This will integrate with the existing `SubprocessCLITransport` we completed in rusty_claw-6cn.
+Implement the public `query()` function that accepts a prompt and optional options, spawns a transport, streams NDJSON messages, and returns `impl Stream<Item = Result<Message, ClawError>>`.
 
 ## Current State
 
-### ✅ What Exists
-1. **Transport Implementation** (rusty_claw-6cn completed)
-   - `SubprocessCLITransport` in `crates/rusty_claw/src/transport/subprocess.rs`
-   - Currently takes `cli_path: PathBuf` in constructor (line 100)
-   - No CLI discovery - relies on caller providing valid path
-   - No version validation
+### ✅ Completed Dependencies
+1. **rusty_claw-6cn** - Transport trait and SubprocessCLITransport implemented
+   - `Transport` trait defined in `crates/rusty_claw/src/transport/mod.rs`
+   - `SubprocessCLITransport` fully implemented with async I/O
+   - `CliDiscovery` integrated for automatic CLI discovery and version validation
 
-2. **Error Hierarchy** (rusty_claw-9pf completed)
-   - `ClawError::CliNotFound` exists (line 52 in error.rs)
-   - ❌ Missing: `ClawError::InvalidCliVersion` variant
+2. **rusty_claw-pwc** - Shared types and message structs implemented
+   - `Message` enum with System, Assistant, User, Result variants
+   - `ContentBlock` enum for text, tool use, tool result, thinking
+   - Complete message parsing with serde support
+   - All types in `crates/rusty_claw/src/messages.rs`
 
-3. **Dependencies Available**
-   - tokio (async runtime)
-   - std::process::Command (for running `claude --version`)
-   - std::path::PathBuf
-   - std::env (for environment variables)
+3. **rusty_claw-k71** - CLI discovery and version check implemented
+   - `CliDiscovery::find()` searches PATH and common locations
+   - `CliDiscovery::validate_version()` ensures CLI >= 2.0.0
+   - Integrated into `SubprocessCLITransport::connect()`
 
-4. **CLI Verification**
-   - Confirmed `claude` is in PATH: `/opt/homebrew/bin/claude`, `/Users/scott/.local/bin/claude`
-   - Confirmed `claude --version` works: outputs `"2.1.39 (Claude Code)"`
-   - Version format: `<semver> (Claude Code)`
+### ❌ Missing Components
 
-### ❌ What's Missing
-1. **CliDiscovery struct** - Not implemented
-2. **InvalidCliVersion error** - Not in ClawError enum
-3. **semver dependency** - Not in Cargo.toml (need for version parsing)
-4. **Integration with SubprocessCLITransport** - Constructor doesn't call CliDiscovery
+1. **No query() function** - The main public API is not implemented
+2. **No ClaudeAgentOptions** - Configuration builder doesn't exist yet (blocked task rusty_claw-dss)
+3. **No stream adapter** - Need to convert `mpsc::UnboundedReceiver<Result<Value, ClawError>>` to `impl Stream<Item = Result<Message, ClawError>>`
 
-## Implementation Plan
+## Required Changes
 
-### Phase 1: Add Error Variant (5 min)
-**File:** `crates/rusty_claw/src/error.rs`
+### 1. Create `crates/rusty_claw/src/query.rs` (NEW FILE)
 
-Add new error variant:
+This file will contain the implementation of the `query()` function. Based on the spec and existing code:
+
 ```rust
-#[error("Invalid Claude CLI version: expected >= 2.0.0, found {version}")]
-InvalidCliVersion { version: String },
-```
+//! Simple query API for one-shot Claude interactions
+//!
+//! The `query()` function provides a convenient way to send a prompt to Claude
+//! and receive a stream of response messages.
 
-**Location:** After `CliNotFound` (around line 53)
+use tokio_stream::{Stream, StreamExt};
+use crate::error::ClawError;
+use crate::messages::Message;
+use crate::transport::{SubprocessCLITransport, Transport};
 
-**Tests to add:**
-- `test_invalid_cli_version_message()` - Verify error message formatting
+/// Execute a one-shot query to Claude and return a stream of messages
+///
+/// This function:
+/// 1. Creates a SubprocessCLITransport (discovers CLI automatically)
+/// 2. Connects to the CLI process
+/// 3. Sends the prompt to the CLI
+/// 4. Returns a stream of parsed Message structs
+///
+/// # Arguments
+///
+/// * `prompt` - The prompt string to send to Claude
+/// * `options` - Optional configuration (for now, accepts None since ClaudeAgentOptions not yet implemented)
+///
+/// # Returns
+///
+/// A stream of `Result<Message, ClawError>` that yields messages until the CLI closes
+///
+/// # Errors
+///
+/// - `ClawError::CliNotFound` if Claude CLI is not found
+/// - `ClawError::InvalidCliVersion` if CLI version < 2.0.0
+/// - `ClawError::Connection` if transport fails to connect
+/// - `ClawError::JsonDecode` if message parsing fails
+///
+/// # Example
+///
+/// ```ignore
+/// use rusty_claw::query;
+/// use tokio_stream::StreamExt;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut stream = query("What files are in this directory?", None).await?;
+///
+///     while let Some(result) = stream.next().await {
+///         match result {
+///             Ok(msg) => println!("{:?}", msg),
+///             Err(e) => eprintln!("Error: {}", e),
+///         }
+///     }
+///     Ok(())
+/// }
+/// ```
+pub async fn query(
+    prompt: impl Into<String>,
+    options: Option<()>, // TODO: Change to ClaudeAgentOptions when rusty_claw-dss is complete
+) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
+    let prompt = prompt.into();
 
-### Phase 2: Add semver Dependency (2 min)
-**File:** `Cargo.toml` (workspace root)
+    // TODO: Extract CLI args from options when ClaudeAgentOptions exists
+    let args = vec![
+        "--output-format=stream-json".to_string(),
+        "--verbose".to_string(),
+        "-p".to_string(),
+        prompt,
+    ];
 
-Add to `[workspace.dependencies]`:
-```toml
-semver = "1.0"
-```
+    // Create transport with auto-discovery (None = discover CLI)
+    let mut transport = SubprocessCLITransport::new(None, args);
 
-**File:** `crates/rusty_claw/Cargo.toml`
+    // Connect to CLI (discovers, validates version, spawns process)
+    transport.connect().await?;
 
-Add to `[dependencies]`:
-```toml
-semver = { workspace = true }
-```
+    // Get the message receiver from transport
+    let rx = transport.messages();
 
-### Phase 3: Create CliDiscovery Module (30 min)
-**File:** `crates/rusty_claw/src/transport/discovery.rs` (NEW)
+    // Convert receiver to stream and parse Message structs
+    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx)
+        .map(|result| {
+            result.and_then(|value| {
+                serde_json::from_value::<Message>(value).map_err(|e| {
+                    ClawError::MessageParse {
+                        reason: e.to_string(),
+                        raw: format!("{:?}", e),
+                    }
+                })
+            })
+        });
 
-#### 3.1 Struct Definition
-```rust
-pub struct CliDiscovery;
-
-impl CliDiscovery {
-    pub async fn find(cli_path: Option<&Path>) -> Result<PathBuf, ClawError>
-    pub async fn validate_version(cli: &Path) -> Result<String, ClawError>
+    Ok(stream)
 }
 ```
 
-#### 3.2 Search Strategy (find method)
-Search in order (stop at first success):
-1. **Explicit cli_path argument** - If provided, check if exists
-2. **CLAUDE_CLI_PATH env var** - Check `std::env::var("CLAUDE_CLI_PATH")`
-3. **PATH search** - Use `which::which("claude")` (need `which` crate)
-4. **Common locations** - Hardcoded paths:
-   - `/opt/homebrew/bin/claude` (macOS Homebrew)
-   - `/usr/local/bin/claude` (Manual install)
-   - `~/.local/bin/claude` (User install)
-   - `~/.npm/bin/claude` (npm global install)
-   - `~/.claude/local/claude` (Claude Code self-install)
+**Key Design Decisions:**
+- **Placeholder for options**: Accept `Option<()>` now, will change to `Option<ClaudeAgentOptions>` in future task
+- **Auto-discovery**: Pass `None` to SubprocessCLITransport for automatic CLI discovery
+- **Stream conversion**: Use `tokio_stream::wrappers::UnboundedReceiverStream` to convert mpsc receiver
+- **Message parsing**: Parse `serde_json::Value` into typed `Message` structs
+- **Error handling**: Convert JSON errors to `ClawError::MessageParse`
 
-**Error:** Return `ClawError::CliNotFound` if all searches fail
+### 2. Modify `crates/rusty_claw/src/lib.rs`
 
-#### 3.3 Version Validation (validate_version method)
-1. Run: `tokio::process::Command::new(cli).arg("--version").output().await`
-2. Parse stdout: Extract version string from `"X.Y.Z (Claude Code)"`
-3. Use `semver::Version::parse()` to parse version
-4. Compare: `version >= Version::new(2, 0, 0)`
-5. Return `Ok(version_string)` or `Err(ClawError::InvalidCliVersion)`
+Add the query module and re-export the function:
 
-**Errors:**
-- I/O error → `ClawError::Io`
-- Parse failure → `ClawError::InvalidCliVersion`
-- Version < 2.0.0 → `ClawError::InvalidCliVersion`
-
-#### 3.4 Tests to Add
-- `test_find_with_explicit_path()` - Explicit cli_path takes precedence
-- `test_find_with_env_var()` - CLAUDE_CLI_PATH env var works
-- `test_find_in_path()` - Searches PATH correctly
-- `test_find_not_found()` - Returns CliNotFound when missing
-- `test_validate_version_valid()` - Version >= 2.0.0 passes
-- `test_validate_version_invalid()` - Version < 2.0.0 fails
-- `test_validate_version_parse_error()` - Malformed output fails
-
-### Phase 4: Integrate with SubprocessCLITransport (15 min)
-**File:** `crates/rusty_claw/src/transport/subprocess.rs`
-
-#### 4.1 Update Constructor
-**Current (line 100-110):**
 ```rust
-pub fn new(cli_path: PathBuf, args: Vec<String>) -> Self
-```
+// Add after existing modules
+pub mod query;
 
-**New signature:**
-```rust
-pub fn new(cli_path: Option<PathBuf>, args: Vec<String>) -> Self
-```
+// Add to prelude
+pub mod prelude {
+    //! Common imports for rusty_claw users
+    //!
+    //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
-**Store both:**
-```rust
-struct SubprocessCLITransport {
-    /// Optional CLI path (resolved on connect if None)
-    cli_path_arg: Option<PathBuf>,
-    /// Resolved CLI path (set during connect)
-    cli_path: Arc<Mutex<Option<PathBuf>>>,
-    // ... rest of fields
+    pub use crate::error::ClawError;
+    pub use crate::messages::{
+        ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
+        StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
+    };
+    pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
+    pub use crate::query::query; // NEW
 }
 ```
 
-#### 4.2 Update connect() Method
-**Current (line 278-336):** Uses `self.cli_path` directly
-
-**New behavior (in connect):**
-1. Resolve CLI path if not set:
-   ```rust
-   let cli_path = if let Some(mut guard) = self.cli_path.lock().await {
-       if guard.is_none() {
-           let discovered = CliDiscovery::find(self.cli_path_arg.as_deref()).await?;
-           *guard = Some(discovered.clone());
-           discovered
-       } else {
-           guard.as_ref().unwrap().clone()
-       }
-   } else { ... };
-   ```
-2. Call `CliDiscovery::validate_version(&cli_path).await?`
-3. Then spawn subprocess with validated path
-
-**Tests to update:**
-- Update all tests to pass `None` for cli_path (use discovery)
-- Add `test_connect_validates_version()` - Ensures version check happens
-- Update `test_connect_with_invalid_cli()` to use explicit bad path
-
-### Phase 5: Export and Document (5 min)
-**File:** `crates/rusty_claw/src/transport/mod.rs`
-
-Add module:
+**Also add top-level re-export for convenience:**
 ```rust
-mod discovery;
-pub use discovery::CliDiscovery;
+// Public API re-exports
+pub use query::query;
 ```
 
-Update module docs to mention CLI discovery
+## Implementation Strategy
 
-## Dependencies
+### Step 1: Create query.rs with basic implementation (15 min)
+- Write function signature matching spec
+- Implement transport creation and connection
+- Convert receiver to stream
+- Add message parsing with error handling
 
-### ✅ Satisfied
-- rusty_claw-9pf (error hierarchy) - COMPLETED
+### Step 2: Update lib.rs (5 min)
+- Add `pub mod query;`
+- Re-export `query` function at top level
+- Add to prelude
 
-### ⚠️ New Dependencies Required
-- `semver = "1.0"` - For semantic version parsing
-- `which = "6.0"` (OPTIONAL) - For PATH search (can use manual implementation if desired)
+### Step 3: Write tests (20 min)
+- Test with valid prompt (will require mock CLI or skip for now)
+- Test error cases (CLI not found, version mismatch)
+- Test streaming behavior
+- Test message parsing
 
-## Risks & Considerations
-
-### 🟡 Medium Risk: PATH Search Implementation
-**Issue:** Need to search PATH environment variable for `claude` binary
-
-**Options:**
-1. Use `which` crate (simplest, adds dependency)
-2. Manual implementation:
-   ```rust
-   std::env::var("PATH")
-       .split(':')
-       .map(|dir| Path::new(dir).join("claude"))
-       .find(|path| path.exists())
-   ```
-
-**Recommendation:** Use `which` crate - it's battle-tested and handles platform differences
-
-### 🟢 Low Risk: Home Directory Expansion
-**Issue:** Common locations like `~/.local/bin/claude` need tilde expansion
-
-**Solution:**
-```rust
-use std::env;
-let home = env::var("HOME").unwrap_or_default();
-let path = PathBuf::from(home).join(".local/bin/claude");
-```
-
-**Alternative:** Use `dirs` crate for cross-platform home dir
-
-### 🟢 Low Risk: Version String Parsing
-**Issue:** Version format is `"X.Y.Z (Claude Code)"`, need to extract X.Y.Z
-
-**Solution:**
-```rust
-let output = String::from_utf8_lossy(&output.stdout);
-let version_str = output
-    .split_whitespace()
-    .next()
-    .ok_or(ClawError::InvalidCliVersion { version: output.to_string() })?;
-semver::Version::parse(version_str)?
-```
-
-### 🟢 Low Risk: Backwards Compatibility
-**Issue:** Changing `SubprocessCLITransport::new()` signature from required to optional PathBuf
-
-**Impact:**
-- Breaking change for existing code
-- Tests need updates
-
-**Mitigation:**
-- We're at 0.1.0 (pre-release), breaking changes are acceptable
-- Update all tests in same commit
-- Clear migration notes in CHANGELOG
+### Step 4: Update documentation (5 min)
+- Add module-level docs
+- Add function-level docs with examples
+- Update lib.rs overview
 
 ## Success Criteria
 
-### Code Changes
-- ✅ Add `ClawError::InvalidCliVersion` variant with test
-- ✅ Add `semver` dependency to Cargo.toml
-- ✅ Create `crates/rusty_claw/src/transport/discovery.rs` with CliDiscovery
-- ✅ Export CliDiscovery from `transport/mod.rs`
-- ✅ Update SubprocessCLITransport constructor to take `Option<PathBuf>`
-- ✅ Update SubprocessCLITransport::connect() to call CliDiscovery
-
-### Test Coverage
-- ✅ Error variant test in error.rs
-- ✅ 7+ tests in discovery.rs covering all search paths
-- ✅ Update existing transport tests for new signature
-- ✅ Add version validation test in subprocess.rs
-
-### Quality Gates
-- ✅ All tests pass (including existing 37 tests)
+- ✅ `query()` function signature matches spec
+- ✅ Transport integration working (auto-discovery, version check)
+- ✅ Message streaming functional
+- ✅ Stream returns `impl Stream<Item = Result<Message, ClawError>>`
+- ✅ Error handling complete (CLI not found, connection, parsing)
+- ✅ Function exported from lib.rs and prelude
+- ✅ All unit tests passing
 - ✅ Zero clippy warnings
-- ✅ Documentation complete (discovery module and methods)
-- ✅ SPEC.md compliance (lines 712-729)
+- ✅ Documentation complete with examples
 
-### Integration
-- ✅ SubprocessCLITransport automatically discovers CLI on connect
-- ✅ Validates version >= 2.0.0 before spawning
-- ✅ Returns clear errors for missing CLI or invalid version
+## Test Requirements
 
-## Next Steps (After Completion)
+### Unit Tests
+- ✅ Test query with empty prompt (should work)
+- ✅ Test query with None options (should work)
+- ✅ Test error handling for CLI not found (use invalid cli_path)
+- ✅ Test error handling for invalid version
+- ✅ Test message parsing (valid and invalid JSON)
 
-This task **unblocks**:
-- **rusty_claw-sna** [P1]: Implement query() function
-  - query() will use SubprocessCLITransport
-  - Can now rely on automatic CLI discovery
+### Integration Tests (Deferred)
+- ⏸️ Test with real CLI (requires installation)
+- ⏸️ Test with mock CLI subprocess
+- ⏸️ End-to-end test with actual query and response
 
-## Files to Create
-1. `crates/rusty_claw/src/transport/discovery.rs` - New module
+**Note:** Full integration tests will be added in rusty_claw-isy (P2 task: Add integration tests with mock CLI)
 
-## Files to Modify
-1. `crates/rusty_claw/src/error.rs` - Add InvalidCliVersion variant
-2. `Cargo.toml` - Add semver (and optionally which) dependency
-3. `crates/rusty_claw/Cargo.toml` - Add semver dependency
-4. `crates/rusty_claw/src/transport/mod.rs` - Export CliDiscovery
-5. `crates/rusty_claw/src/transport/subprocess.rs` - Integrate CliDiscovery
+## Risks & Mitigation
+
+### Risk 1: ClaudeAgentOptions Not Yet Implemented (MEDIUM)
+- **Impact:** Can't pass configuration options to query()
+- **Mitigation:** Use `Option<()>` placeholder, hardcode default args
+- **Future:** Update signature when rusty_claw-dss is complete
+- **Breaking Change:** Yes, but acceptable at 0.1.0
+
+### Risk 2: No Mock CLI for Testing (MEDIUM)
+- **Impact:** Can't write full integration tests yet
+- **Mitigation:** Write unit tests for parsing and error handling
+- **Mitigation:** Integration tests deferred to rusty_claw-isy
+- **Future:** Full test coverage when mock CLI exists
+
+### Risk 3: Stream Lifetime and Ownership (LOW)
+- **Impact:** Transport must live as long as stream
+- **Mitigation:** Transport is owned by the stream (via closure or Arc)
+- **Current:** Transport dropped early - need to fix
+- **Solution:** Keep transport alive in stream (use Arc or move into task)
+
+### Risk 4: CLI Args Construction (LOW)
+- **Impact:** Hardcoded args may not work for all cases
+- **Mitigation:** Use minimal set of required args (--output-format, --verbose, -p)
+- **Future:** Build args from ClaudeAgentOptions when available
+
+## Files to Create/Modify
+
+### New Files
+1. `crates/rusty_claw/src/query.rs` - Main query() implementation (150 lines)
+
+### Modified Files
+1. `crates/rusty_claw/src/lib.rs` - Add query module, re-exports (10 lines)
+
+### Test Files (Optional for this task)
+1. `crates/rusty_claw/src/query.rs` - Unit tests in #[cfg(test)] module (50 lines)
+
+## Dependencies
+
+**Runtime Dependencies:**
+- ✅ tokio (async runtime)
+- ✅ tokio-stream (stream utilities)
+- ✅ serde_json (message parsing)
+- ✅ All dependencies already in Cargo.toml
+
+**Type Dependencies:**
+- ✅ `Message` enum from messages.rs
+- ✅ `ClawError` enum from error.rs
+- ✅ `Transport` trait and `SubprocessCLITransport` from transport/
+- ❌ `ClaudeAgentOptions` (blocked, will use placeholder)
+
+## Next Steps After Implementation
+
+1. **rusty_claw-qrl** (P2) - Implement ClaudeClient for interactive sessions
+   - Will use query() as foundation
+   - Adds stateful, multi-turn interactions
+
+2. **rusty_claw-dss** (P2) - Implement ClaudeAgentOptions builder
+   - Update query() signature to accept `Option<ClaudeAgentOptions>`
+   - Pass options to transport for CLI arg construction
+
+3. **rusty_claw-isy** (P2) - Add integration tests with mock CLI
+   - Full end-to-end tests for query()
+   - Mock CLI subprocess for testing
 
 ## Estimated Effort
-- **Total:** ~60 minutes
-- **Breakdown:**
-  - Error variant: 5 min
-  - Dependencies: 2 min
-  - CliDiscovery module: 30 min
-  - SubprocessCLITransport integration: 15 min
-  - Documentation and exports: 5 min
-  - Testing and verification: 10 min (covered by test runs)
+
+- **Implementation:** 15 minutes (query.rs)
+- **Integration:** 5 minutes (lib.rs updates)
+- **Unit Tests:** 20 minutes (basic tests)
+- **Documentation:** 5 minutes (docstrings)
+- **Total:** ~45 minutes
 
 ## Notes
 
-- The `claude --version` output format is stable: `"2.1.39 (Claude Code)"`
-- We can assume this format won't change in 2.x versions
-- If format changes, version parsing will fail safely with InvalidCliVersion
-- The search order prioritizes explicit configuration over automatic discovery
-- This follows Unix conventions (explicit > env var > PATH > common locations)
+- The query() function is the simplest entry point to the SDK
+- It's designed for one-shot queries (fire and forget)
+- More complex use cases (multi-turn, hooks, permissions) will use ClaudeClient
+- The stream is consumed by the caller, transport cleanup happens automatically on drop
+- Transport lifetime management is critical - transport must outlive the stream
+
+## Transport Lifetime Issue (CRITICAL)
+
+⚠️ **Important:** The current implementation has a **transport lifetime bug**:
+
+```rust
+// ❌ WRONG - transport dropped before stream is consumed
+pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
+    let mut transport = SubprocessCLITransport::new(...);
+    transport.connect().await?;
+    let rx = transport.messages();
+    let stream = UnboundedReceiverStream::new(rx).map(...);
+    Ok(stream) // transport dropped here, process killed!
+}
+```
+
+**Solution:** Keep transport alive alongside stream:
+
+```rust
+// ✅ CORRECT - transport lives as long as stream
+pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
+    let mut transport = SubprocessCLITransport::new(...);
+    transport.connect().await?;
+    let rx = transport.messages();
+
+    let stream = UnboundedReceiverStream::new(rx)
+        .map(parse_message);
+
+    // Wrap in a struct that owns both transport and stream
+    Ok(QueryStream::new(transport, stream))
+}
+```
+
+**Alternative:** Spawn background task that owns transport:
+
+```rust
+pub async fn query(...) -> Result<impl Stream<...>, ClawError> {
+    let mut transport = SubprocessCLITransport::new(...);
+    transport.connect().await?;
+    let rx = transport.messages();
+
+    // Spawn task that owns transport and keeps it alive
+    tokio::spawn(async move {
+        // Transport is moved here, will live until task ends
+        let _transport = transport;
+        // Stream receiver will close when transport drops
+    });
+
+    let stream = UnboundedReceiverStream::new(rx).map(...);
+    Ok(stream)
+}
+```
+
+**Recommendation:** Use the wrapper struct approach for cleaner lifecycle management.
+
+## Investigation Complete
+
+**Status:** ✅ Ready for implementation
+**Confidence:** High (all dependencies exist, clear path forward)
+**Blockers:** None
+**Next Step:** Create query.rs and implement function

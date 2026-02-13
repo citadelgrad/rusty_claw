@@ -1,69 +1,75 @@
-# Current Task: rusty_claw-k71
+# Current Task: rusty_claw-sna
 
-**Task ID:** rusty_claw-k71
+**Task ID:** rusty_claw-sna
 **Status:** IN_PROGRESS
-**Priority:** P2
+**Priority:** P1
 **Type:** Task
 **Owner:** Scott Nixon
 
 ## Title
-Implement CLI discovery and version check
+Implement query() function
 
 ## Description
-Implement CliDiscovery with find() searching cli_path, CLAUDE_CLI_PATH env, PATH, and common install locations. Add validate_version() to ensure CLI >= 2.0.0 via semver parsing.
+Implement the public query() function that accepts a prompt and options, spawns a transport, streams NDJSON messages, and returns impl Stream<Item = Result<Message, ClawError>>.
 
-## Dependencies
-- ✅ Depends on: rusty_claw-9pf (Define error hierarchy) - COMPLETED
+## Dependencies (All Completed ✅)
+- ✅ rusty_claw-6cn: Implement Transport trait and SubprocessCLITransport (P1)
+- ✅ rusty_claw-pwc: Define shared types and message structs (P1)
+- ✅ rusty_claw-k71: Implement CLI discovery and version check (P2)
 
 ## Blocks
-- ○ rusty_claw-sna (Implement query() function) - P1
+- ○ rusty_claw-qrl: Implement ClaudeClient for interactive sessions (P2)
 
 ## Key Requirements
 
-1. **CliDiscovery struct with find() method:**
-   - Takes optional cli_path argument
-   - Searches in order: cli_path → CLAUDE_CLI_PATH env → PATH → common locations
-   - Returns Result<PathBuf, ClawError::CliNotFound>
+1. **Function Signature:**
+   ```rust
+   pub async fn query(
+       prompt: impl Into<String>,
+       options: Option<ClaudeAgentOptions>,
+   ) -> impl Stream<Item = Result<Message, ClawError>>
+   ```
 
-2. **validate_version() function:**
-   - Executes CLI with --version flag
-   - Parses semantic version string
-   - Ensures version >= 2.0.0
-   - Returns Result<(), ClawError::InvalidCliVersion>
+2. **Core Functionality:**
+   - Accept a prompt string and optional ClaudeAgentOptions
+   - Automatically discover and launch the Claude CLI
+   - Spawn a SubprocessCLITransport connection
+   - Send the query message to the transport
+   - Stream NDJSON responses as Message structs
+   - Handle errors gracefully
 
-3. **Common locations to search:**
-   - /opt/homebrew/bin/claude (macOS)
-   - /usr/local/bin/claude
-   - ~/.local/bin/claude
-   - /usr/bin/claude
+3. **Message Flow:**
+   - Create Transport connection via SubprocessCLITransport::connect()
+   - Send Control::Query message with prompt and options
+   - Read NDJSON stream of responses
+   - Parse each line as a Message
+   - Yield results to the stream
+   - Handle transport errors and convert to ClawError
 
-4. **Integration with SubprocessCLITransport:**
-   - Use CliDiscovery::find() in transport constructor
-   - Call validate_version() on connect
+4. **Error Handling:**
+   - Return ClawError for CLI not found, version mismatch, transport errors, parsing errors, etc.
+
+5. **Return Type:**
+   - Use Rust streams (async generator or futures::Stream)
+   - Return `impl Stream<Item = Result<Message, ClawError>>`
+   - Support cancellation via drop
 
 ## Files to Create/Modify
-- Create/Modify: `crates/rusty_claw/src/transport/discovery.rs` - CliDiscovery implementation
-- Modify: `crates/rusty_claw/src/transport/mod.rs` - Export discovery module
-- Modify: `crates/rusty_claw/src/transport/subprocess.rs` - Integrate CliDiscovery
-
-## Reference
-- SPEC.md: CLI discovery specification
-- Error hierarchy: `crates/rusty_claw/src/error.rs`
-- Existing transport implementation
+- Modify: `crates/rusty_claw/src/lib.rs` - Add query() function
+- Potentially create: `crates/rusty_claw/src/client.rs` - Query implementation
 
 ## Test Coverage Needed
-- CLI discovery in PATH
-- CLI discovery with CLAUDE_CLI_PATH env var
-- CLI discovery with explicit cli_path argument
-- Missing CLI returns CliNotFound error
-- Invalid version returns InvalidCliVersion error
-- Valid version >= 2.0.0 passes validation
+- Test with valid prompt
+- Test with ClaudeAgentOptions
+- Test error cases (CLI not found, invalid version, etc.)
+- Test streaming behavior
+- Test message parsing
 
 ## Success Criteria
-- ✅ CliDiscovery struct with find() method
-- ✅ validate_version() function with semver parsing
-- ✅ All search locations checked in correct order
-- ✅ Integration with SubprocessCLITransport
+- ✅ Function signature matches spec
+- ✅ Transport integration working
+- ✅ Message streaming functional
+- ✅ Error handling complete
 - ✅ All unit tests passing
 - ✅ Zero clippy warnings
 - ✅ Documentation complete
