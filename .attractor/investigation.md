@@ -1,520 +1,392 @@
-# Investigation: rusty_claw-bip - Implement Hook system
+# Investigation: rusty_claw-s8q - Implement Permission Management
 
-## Task Summary
+## Task Overview
 
-**ID:** rusty_claw-bip
-**Title:** Implement Hook system
+**Task ID:** rusty_claw-s8q
+**Title:** Implement permission management
 **Priority:** P2 (High)
-**Status:** in_progress
-**Owner:** Scott Nixon
+**Type:** task
 
-**Description:** Implement HookEvent enum, HookMatcher, HookCallback trait with blanket impl for closures, HookResponse with permission decisions, and hook invocation routing from control protocol callbacks.
+Implement a comprehensive permission management system for controlling tool usage in Claude agents. This builds on top of the Hook system (rusty_claw-bip) to provide flexible, policy-based permission control.
 
-**Dependencies (All Completed ✓):**
-- ✓ rusty_claw-91n: Implement Control Protocol handler [P1]
+## What Exists (Foundation)
 
-**Blocks (Downstream Tasks):**
-- ○ rusty_claw-s8q: Implement permission management [P2]
+### 1. Hook System (Completed in rusty_claw-bip)
+**Location:** `crates/rusty_claw/src/hooks/`
 
-## Current State Analysis
+- ✅ **HookEvent enum** (options.rs:100-121) - 10 lifecycle events
+- ✅ **HookMatcher** (options.rs:140-170) - Pattern matching for hook triggering
+- ✅ **HookCallback trait** (hooks/callback.rs) - Trait for implementing hook logic
+- ✅ **HookResponse** (hooks/response.rs:54-147) - Response with permission decisions
+- ✅ **PermissionDecision enum** (hooks/response.rs:18-25) - Allow/Deny/Ask decisions
+- ✅ **HookInput/HookContext** (hooks/types.rs) - Data structures for hook invocation
 
-### What Exists ✅
+### 2. Control Protocol Handler
+**Location:** `crates/rusty_claw/src/control/`
 
-**1. Control Protocol (✓ Complete - from rusty_claw-91n)**
-- `src/control/mod.rs` - ControlProtocol with request/response routing
-- `src/control/messages.rs` - Control message types with serde
-- `src/control/handlers.rs` - Handler traits (CanUseToolHandler, HookHandler, McpMessageHandler)
-- `src/control/pending.rs` - Pending request tracking
-- Full integration with Control Protocol including `IncomingControlRequest::HookCallback`
+- ✅ **CanUseToolHandler trait** (handlers.rs:78-97) - Trait for tool permission checks
+- ✅ **ControlHandlers registry** (handlers.rs:220-344) - Handler registration system
+- ✅ **IncomingControlRequest::CanUseTool** (messages.rs:236-242) - Message type for tool permission requests
+- ✅ **handle_incoming()** (mod.rs:389-end) - Routes can_use_tool requests to handlers
 
-**2. Control Handlers (✓ Partial)**
-- `HookHandler` trait exists in `src/control/handlers.rs`:
-  ```rust
-  #[async_trait]
-  pub trait HookHandler: Send + Sync {
-      async fn call(&self, hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError>;
-  }
-  ```
-- Handler registry in `ControlHandlers` with HashMap<String, Arc<dyn HookHandler>>
-- Registration method: `register_hook(hook_id: String, handler: Arc<dyn HookHandler>)`
-
-**3. Placeholder Types (✓ Exist but minimal)**
-- `src/options.rs`:
-  - `HookEvent` - Currently a placeholder empty struct
-  - `HookMatcher` - Currently a placeholder empty struct
-- These are referenced in `control/messages.rs` for `Initialize` and `HookCallback` requests
-
-**4. Control Message Integration (✓ Complete)**
-- `IncomingControlRequest::HookCallback` variant exists with:
-  - `hook_id: String`
-  - `hook_event: HookEvent`
-  - `hook_input: Value`
-- `ControlRequest::Initialize` accepts `hooks: HashMap<HookEvent, Vec<HookMatcher>>`
-
-### What's Missing ❌
-
-**Critical Implementation Gaps:**
-
-1. **HookEvent enum** (REPLACE in `src/options.rs`, ~50 lines)
-   - Currently: Empty placeholder struct
-   - Needed: Full enum with variants (PreToolUse, PostToolUse, etc.)
-   - Per SPEC.md Section 6.1:
-     ```rust
-     #[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-     #[serde(rename_all = "PascalCase")]
-     pub enum HookEvent {
-         PreToolUse,
-         PostToolUse,
-         PostToolUseFailure,
-         UserPromptSubmit,
-         Stop,
-         SubagentStop,
-         SubagentStart,
-         PreCompact,
-         Notification,
-         PermissionRequest,
-     }
-     ```
-
-2. **HookMatcher struct** (REPLACE in `src/options.rs`, ~40 lines)
-   - Currently: Empty placeholder struct
-   - Needed: Pattern matching for tool names
-   - Per SPEC.md Section 6.2:
-     ```rust
-     #[derive(Debug, Clone, Serialize, Deserialize)]
-     pub struct HookMatcher {
-         /// Tool name pattern to match (e.g., "Bash", "mcp__*")
-         #[serde(skip_serializing_if = "Option::is_none")]
-         pub tool_name: Option<String>,
-     }
-     ```
-   - Should support:
-     - Exact match: "Bash"
-     - Wildcard: "mcp__*"
-     - None (match all tools)
-
-3. **HookCallback trait with blanket impl** (NEW FILE `src/hooks/callback.rs`, ~80 lines)
-   - Trait definition with async call method
-   - Blanket impl for closures: `impl<F, Fut> HookCallback for F where F: Fn(...) -> Fut`
-   - Per SPEC.md Section 6.2:
-     ```rust
-     #[async_trait]
-     pub trait HookCallback: Send + Sync {
-         async fn call(
-             &self,
-             input: HookInput,
-             tool_use_id: Option<&str>,
-             context: &HookContext,
-         ) -> Result<HookResponse, ClawError>;
-     }
-     ```
-
-4. **HookInput and HookContext** (NEW FILE `src/hooks/types.rs`, ~60 lines)
-   - HookInput: Data passed to hooks (tool name, input, etc.)
-   - HookContext: Session context (tools, agents, etc.)
-   - Needs to be designed based on hook event types
-
-5. **HookResponse struct** (NEW FILE `src/hooks/response.rs`, ~80 lines)
-   - Permission decisions (Allow/Deny/Ask)
-   - Additional context injection
-   - Tool input modification
-   - Per SPEC.md Section 6.3:
-     ```rust
-     #[derive(Debug, Clone, Default, Serialize)]
-     pub struct HookResponse {
-         #[serde(skip_serializing_if = "Option::is_none")]
-         pub permission_decision: Option<PermissionDecision>,
-
-         #[serde(skip_serializing_if = "Option::is_none")]
-         pub permission_decision_reason: Option<String>,
-
-         #[serde(skip_serializing_if = "Option::is_none")]
-         pub additional_context: Option<String>,
-
-         #[serde(rename = "continue", default = "default_true")]
-         pub should_continue: bool,
-
-         #[serde(skip_serializing_if = "Option::is_none")]
-         pub updated_input: Option<serde_json::Value>,
-     }
-
-     #[derive(Debug, Clone, Serialize)]
-     #[serde(rename_all = "lowercase")]
-     pub enum PermissionDecision {
-         Allow,
-         Deny,
-         Ask,
-     }
-     ```
-
-6. **Hook invocation routing** (MODIFY `src/control/mod.rs`, +50 lines)
-   - Integrate hook dispatch with control protocol
-   - Route `IncomingControlRequest::HookCallback` to registered hooks
-   - Return `HookResponse` as `ControlResponse`
-   - Currently `HookHandler` trait exists but hook matching/routing logic is missing
-
-7. **Hooks module structure** (NEW FILE `src/hooks/mod.rs`, ~30 lines)
-   - Module organization and re-exports
-   - Public API surface
-   - Documentation with examples
-
-## Design Analysis
-
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Hooks Module                            │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                  HookEvent Enum                           │ │
-│  │  PreToolUse, PostToolUse, PostToolUseFailure,            │ │
-│  │  UserPromptSubmit, Stop, SubagentStop, etc.              │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                             ↓                                   │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                  HookMatcher                              │ │
-│  │  Pattern matching: tool_name (exact, wildcard, None)     │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                             ↓                                   │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                  HookCallback Trait                       │ │
-│  │  async fn call(input, tool_use_id, context) -> Response  │ │
-│  │  + Blanket impl for Fn closures                          │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                             ↓                                   │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                  HookResponse                             │ │
-│  │  Permission decision (Allow/Deny/Ask)                    │ │
-│  │  Additional context, updated input, continue flag        │ │
-│  └───────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                             ↕
-┌─────────────────────────────────────────────────────────────────┐
-│                  Control Protocol Handler                       │
-│  IncomingControlRequest::HookCallback                          │
-│  → Dispatch to HookHandler via registry                        │
-│  → Return HookResponse as ControlResponse                      │
-└─────────────────────────────────────────────────────────────────┘
+**Current Default Behavior:**
+```rust
+// If no handler registered, allow all tools (line 389-399)
+if let Some(handler) = &handlers.can_use_tool {
+    match handler.can_use_tool(&tool_name, &tool_input).await {
+        Ok(allowed) => ControlResponse::Success {
+            data: json!({ "allowed": allowed }),
+        },
+        Err(e) => ControlResponse::Error {
+            error: e.to_string(),
+            extra: json!({}),
+        },
+    }
+} else {
+    // Default: allow all tools
+    ControlResponse::Success {
+        data: json!({ "allowed": true }),
+    }
+}
 ```
 
-### Key Design Patterns
+### 3. Options Configuration
+**Location:** `crates/rusty_claw/src/options.rs`
 
-**1. Hook Event Types (SPEC.md 6.1)**
-- Enum with PascalCase serialization
-- Hash + Eq + PartialEq for HashMap keys
-- Comprehensive set of lifecycle events:
-  - Tool lifecycle: PreToolUse, PostToolUse, PostToolUseFailure
-  - User interaction: UserPromptSubmit
-  - Session control: Stop, SubagentStop, SubagentStart
-  - System events: PreCompact, Notification, PermissionRequest
+- ✅ **PermissionMode enum** (lines 48-72) - Currently has 4 modes:
+  - Default
+  - AcceptEdits
+  - BypassPermissions
+  - Plan
+- ✅ **permission_prompt_tool_allowlist** (line 224) - Vec<String> field in ClaudeAgentOptions
+- ✅ **allowed_tools** (line 218) - Vec<String> field for explicit tool allowlist
+- ✅ **disallowed_tools** (line 220) - Vec<String> field for explicit tool denylist
 
-**2. Hook Matching (SPEC.md 6.2)**
-- Flexible pattern matching:
-  - `tool_name: None` → Match all tools
-  - `tool_name: Some("Bash")` → Exact match
-  - `tool_name: Some("mcp__*")` → Wildcard (future enhancement)
-- Multiple matchers per event in `HashMap<HookEvent, Vec<HookMatcher>>`
+## What's Missing (Implementation Needed)
 
-**3. Closure Support (SPEC.md 13.1)**
-- Blanket trait impl for ergonomics:
-  ```rust
-  impl<F, Fut> HookCallback for F
-  where
-      F: Fn(HookInput, Option<&str>, &HookContext) -> Fut + Send + Sync,
-      Fut: Future<Output = Result<HookResponse, ClawError>> + Send,
-  {
-      async fn call(&self, input: HookInput, tool_use_id: Option<&str>, context: &HookContext)
-          -> Result<HookResponse, ClawError>
-      {
-          self(input, tool_use_id, context).await
-      }
-  }
-  ```
-- Allows both trait objects and closures as callbacks
+### 1. Enhanced PermissionMode Enum ❌
+**Location:** `src/options.rs` (needs modification)
 
-**4. Permission Decisions (SPEC.md 6.3)**
-- Three-way decision: Allow, Deny, Ask
-- Optional reason for user-facing messages
-- Additional context injection for Claude
-- Tool input transformation
-- Continue flag for hook chaining
+**Current Implementation:**
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionMode {
+    Default,
+    AcceptEdits,
+    BypassPermissions,
+    Plan,
+}
+```
 
-**5. Integration with Control Protocol**
-- `HookHandler` trait already exists in control/handlers.rs
-- Need to:
-  1. Update `HookHandler::call` signature to match new types
-  2. Implement hook matching in control protocol handler
-  3. Convert `HookResponse` to `ControlResponse::Success`
+**Required Enhancement:**
+- Add `Ask` variant for prompt-on-use behavior
+- Add `Deny` variant for blocking all tools
+- Add `Custom` variant for hook-based permission logic
+- Keep existing variants for backward compatibility
 
-### Implementation Strategy
+**Acceptance Criteria:** PermissionMode enum with Ask/Deny/Custom variants
 
-**Phase 1: Core Types (90 min)**
-1. Replace `HookEvent` placeholder with full enum (~20 min)
-2. Replace `HookMatcher` placeholder with full struct (~20 min)
-3. Implement `HookInput` and `HookContext` (~30 min)
-4. Implement `HookResponse` and `PermissionDecision` (~20 min)
+### 2. Permission Policy Logic ❌
+**Location:** NEW FILE - `src/permissions/mod.rs` (create new module)
 
-**Phase 2: Callback Trait (60 min)**
-1. Define `HookCallback` trait in hooks module (~15 min)
-2. Implement blanket impl for closures (~30 min)
-3. Update `HookHandler` in control/handlers.rs (~15 min)
+**Required Components:**
+- Policy evaluation engine that:
+  - Checks tool against allowlist/denylist
+  - Routes permission checks through Hook system
+  - Falls back to PermissionMode default policy
+  - Returns PermissionDecision (Allow/Deny/Ask)
 
-**Phase 3: Hook Matching (45 min)**
-1. Implement matcher logic (exact match, wildcard) (~30 min)
-2. Unit tests for pattern matching (~15 min)
+**Acceptance Criteria:** Permission policy implementation with hook integration
 
-**Phase 4: Control Integration (60 min)**
-1. Update control protocol hook dispatch (~30 min)
-2. Convert HookResponse to ControlResponse (~15 min)
-3. Integration tests (~15 min)
+### 3. DefaultPermissionHandler Implementation ❌
+**Location:** NEW FILE - `src/permissions/handler.rs`
 
-**Phase 5: Module Structure (30 min)**
-1. Create hooks/mod.rs with re-exports (~10 min)
-2. Update lib.rs prelude (~5 min)
-3. Module-level documentation (~15 min)
+**Required Implementation:**
+```rust
+pub struct DefaultPermissionHandler {
+    mode: PermissionMode,
+    allowed_tools: Vec<String>,
+    disallowed_tools: Vec<String>,
+    // ... hook registry for custom callbacks
+}
 
-**Phase 6: Documentation (45 min)**
-1. Doctests for all public types (~20 min)
-2. Usage examples in module docs (~15 min)
-3. Architecture documentation (~10 min)
+impl CanUseToolHandler for DefaultPermissionHandler {
+    async fn can_use_tool(&self, tool_name: &str, tool_input: &Value) -> Result<bool, ClawError> {
+        // 1. Check disallowed_tools first (explicit deny)
+        // 2. Check allowed_tools (explicit allow)
+        // 3. Invoke hooks for custom logic
+        // 4. Fall back to PermissionMode default policy
+    }
+}
+```
 
-**Phase 7: Testing (90 min)**
-1. Unit tests for all types (~30 min)
-2. Integration tests with control protocol (~30 min)
-3. Closure blanket impl tests (~15 min)
-4. Pattern matching tests (~15 min)
+**Acceptance Criteria:** DefaultPermissionHandler with policy evaluation
 
-**Phase 8: Verification (30 min)**
-1. Run full test suite (~10 min)
-2. Clippy checks (~5 min)
-3. Documentation coverage (~5 min)
-4. Acceptance criteria checklist (~10 min)
+### 4. Hook Integration for Permission Events ❌
+**Location:** Modify `src/control/mod.rs` handle_incoming()
 
-**Total Estimated Time: 7.5 hours**
+**Current Behavior:**
+- Can_use_tool requests go directly to CanUseToolHandler
+- No hook invocation for permission checks
+
+**Required Enhancement:**
+- Before invoking CanUseToolHandler, check for registered hooks
+- If hooks registered for PreToolUse event:
+  - Construct HookInput with tool_name and tool_input
+  - Invoke hook callbacks
+  - Process HookResponse.permission_decision
+  - Return early if hook denies or asks
+- If no hooks or hook allows, proceed to CanUseToolHandler
+
+**Acceptance Criteria:** Hook integration for can_use_tool events
+
+### 5. Permission Configuration Builder ❌
+**Location:** Modify `src/options.rs` builder
+
+**Required Enhancement:**
+- Add builder methods for permission configuration:
+  - `.permission_mode(PermissionMode)`
+  - `.allowed_tools(Vec<String>)`
+  - `.disallowed_tools(Vec<String>)`
+  - `.permission_prompt_tool_allowlist(Vec<String>)`
+
+**Note:** Builder methods already exist (lines 451-462), but may need updates for new PermissionMode variants
+
+**Acceptance Criteria:** Builder pattern for permission configuration
 
 ## Files to Create/Modify
 
-### New Files (6 files, ~350 lines)
+### New Files (2 files, ~400 lines)
 
-1. **`src/hooks/mod.rs`** (~50 lines)
-   - Module structure and re-exports
-   - Public API documentation
-   - Examples
+1. **`src/permissions/mod.rs`** (~150 lines)
+   - Module documentation with permission system overview
+   - Re-exports for public types
+   - Permission policy evaluation logic
+   - Integration with Hook system
 
-2. **`src/hooks/callback.rs`** (~80 lines)
-   - `HookCallback` trait definition
-   - Blanket impl for closures
-   - Documentation with examples
+2. **`src/permissions/handler.rs`** (~250 lines)
+   - DefaultPermissionHandler struct
+   - CanUseToolHandler trait implementation
+   - Tool allowlist/denylist checking
+   - Hook callback invocation
+   - Default policy fallback
+   - Comprehensive unit tests (~100 lines)
 
-3. **`src/hooks/types.rs`** (~70 lines)
-   - `HookInput` struct
-   - `HookContext` struct
-   - Helper methods
+### Modified Files (5 files)
 
-4. **`src/hooks/response.rs`** (~80 lines)
-   - `HookResponse` struct
-   - `PermissionDecision` enum
-   - Builder pattern helpers
+3. **`src/options.rs`** (+20 lines)
+   - Update PermissionMode enum with Ask/Deny/Custom variants
+   - Update serialization to match CLI expectations
+   - Update to_cli_arg() method for new variants
+   - Add unit tests for new variants
 
-5. **`src/hooks/matcher.rs`** (~70 lines)
-   - Pattern matching logic
-   - Wildcard support
-   - Unit tests
+4. **`src/control/mod.rs`** (+50 lines)
+   - Modify handle_incoming() to invoke hooks before CanUseToolHandler
+   - Add HookInput construction for can_use_tool events
+   - Process HookResponse.permission_decision
+   - Update integration tests
 
-### Modified Files (4 files)
+5. **`src/lib.rs`** (+5 lines)
+   - Add `pub mod permissions;` declaration
+   - Update prelude to export permission types
 
-6. **`src/options.rs`** (REPLACE ~50 lines)
-   - Replace `HookEvent` placeholder → full enum
-   - Replace `HookMatcher` placeholder → move to hooks module
-   - Import from hooks module
+6. **`src/hooks/response.rs`** (+30 lines)
+   - Add helper methods for permission-specific responses
+   - Add PermissionDecision conversion helpers
+   - Add unit tests for new methods
 
-7. **`src/control/handlers.rs`** (MODIFY +15 lines)
-   - Update `HookHandler::call` signature to use new types
-   - Update tests to use new types
+7. **`Cargo.toml`** (no changes needed)
+   - All required dependencies already present
 
-8. **`src/control/mod.rs`** (MODIFY +50 lines)
-   - Implement hook matching in `handle_incoming`
-   - Route to appropriate hook based on event + matcher
-   - Convert HookResponse to ControlResponse
+### Test Files (integrated into module files)
 
-9. **`src/lib.rs`** (MODIFY +10 lines)
-   - Replace empty `hooks` module with real implementation
-   - Update prelude with hook types
+8. **`src/permissions/handler.rs` tests** (~100 lines)
+   - Test allowlist/denylist logic
+   - Test hook integration
+   - Test default policy fallback
+   - Test PermissionMode variants
+   - Test edge cases (empty lists, wildcards TODO)
 
-## Required Changes - Detailed
+## Architecture
 
-### 1. Replace HookEvent in options.rs
+### Permission Check Flow
 
-**Current (line 88-90):**
-```rust
-/// Hook event type (placeholder for future hook tasks)
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HookEvent;
+```
+CLI sends can_use_tool request
+          ↓
+ControlProtocol.handle_incoming()
+          ↓
+Check for PreToolUse hooks
+          ↓
+     [Hooks registered?]
+          ↓
+    YES         NO
+     ↓           ↓
+Invoke hooks → CanUseToolHandler.can_use_tool()
+     ↓               ↓
+HookResponse → DefaultPermissionHandler
+     ↓               ↓
+[permission_decision?]  [Check policy]
+     ↓               ↓
+ Allow/Deny/Ask  Allow/Deny/Ask
+     ↓               ↓
+Send control_response to CLI
 ```
 
-**New:**
-```rust
-/// Hook event type - triggers for lifecycle callbacks
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub enum HookEvent {
-    PreToolUse,
-    PostToolUse,
-    PostToolUseFailure,
-    UserPromptSubmit,
-    Stop,
-    SubagentStop,
-    SubagentStart,
-    PreCompact,
-    Notification,
-    PermissionRequest,
-}
-```
+### Policy Evaluation Order (in DefaultPermissionHandler)
 
-### 2. Replace HookMatcher in options.rs
+1. **Explicit Deny** - Check disallowed_tools first (highest priority)
+2. **Explicit Allow** - Check allowed_tools second
+3. **Hook Decision** - Invoke registered hooks for custom logic
+4. **Default Policy** - Fall back to PermissionMode:
+   - `Allow` → Allow all tools
+   - `Deny` → Deny all tools
+   - `Ask` → Ask user for each tool
+   - `Custom` → Require hook (error if no hook)
+   - `Default/AcceptEdits/BypassPermissions/Plan` → Use CLI defaults
 
-**Current (line 92-94):**
-```rust
-/// Hook matcher (placeholder for future hook tasks)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookMatcher;
-```
+### Hook Integration Points
 
-**New:**
-```rust
-/// Hook matcher for pattern-based hook triggering
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HookMatcher {
-    /// Tool name pattern to match (e.g., "Bash", "mcp__*", or None for all)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_name: Option<String>,
-}
+**PreToolUse Event:**
+- Triggered before tool execution
+- HookInput contains tool_name and tool_input
+- HookResponse.permission_decision determines outcome
+- If hook denies, tool execution is blocked
+- If hook allows, proceed to CanUseToolHandler
+- If no hooks, proceed to CanUseToolHandler
 
-impl HookMatcher {
-    /// Create a matcher that matches all tools
-    pub fn all() -> Self {
-        Self { tool_name: None }
-    }
+**Hook Priority:**
+- Hooks are checked BEFORE CanUseToolHandler
+- Multiple hooks can be registered (evaluated in order)
+- First hook that returns Deny or Ask wins
+- If all hooks Allow, proceed to handler
 
-    /// Create a matcher for a specific tool name
-    pub fn tool(name: impl Into<String>) -> Self {
-        Self { tool_name: Some(name.into()) }
-    }
+## Implementation Plan
 
-    /// Check if this matcher matches the given tool name
-    pub fn matches(&self, tool_name: &str) -> bool {
-        match &self.tool_name {
-            None => true,  // Match all
-            Some(pattern) => {
-                // TODO: Add wildcard support (mcp__*)
-                pattern == tool_name
-            }
-        }
-    }
-}
-```
+### Phase 1: Update PermissionMode Enum (30 min)
+- Add Ask/Deny/Custom variants to PermissionMode
+- Update serialization and to_cli_arg()
+- Add unit tests
+- **Files:** options.rs
 
-### 3. Update HookHandler in control/handlers.rs
+### Phase 2: Create Permissions Module (60 min)
+- Create src/permissions/ directory
+- Create mod.rs with module docs
+- Define DefaultPermissionHandler struct
+- Implement basic structure (no logic yet)
+- **Files:** permissions/mod.rs, permissions/handler.rs
 
-**Current signature (line 129-141):**
-```rust
-#[async_trait]
-pub trait HookHandler: Send + Sync {
-    async fn call(&self, hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError>;
-}
-```
+### Phase 3: Implement Policy Logic (90 min)
+- Implement can_use_tool() in DefaultPermissionHandler
+- Add allowlist/denylist checking
+- Add default policy fallback
+- Add unit tests for policy logic
+- **Files:** permissions/handler.rs
 
-**Keep as-is** - This signature is fine for control protocol integration. The new `HookCallback` trait in the hooks module will have the richer signature, and we'll bridge between them.
+### Phase 4: Hook Integration (60 min)
+- Modify handle_incoming() to invoke hooks
+- Construct HookInput for can_use_tool events
+- Process HookResponse.permission_decision
+- Update integration tests
+- **Files:** control/mod.rs
 
-### 4. Add hook invocation in control/mod.rs
+### Phase 5: Response Helpers (30 min)
+- Add permission-specific helper methods to HookResponse
+- Add PermissionDecision conversion helpers
+- Add unit tests
+- **Files:** hooks/response.rs
 
-**Location:** In `handle_incoming` method (needs to be created/updated)
+### Phase 6: Module Integration (30 min)
+- Update lib.rs with permissions module
+- Update prelude to export types
+- Update Cargo.toml if needed (likely not)
+- **Files:** lib.rs
 
-**Add:**
-```rust
-async fn dispatch_hook(&self, hook_id: &str, hook_event: HookEvent, hook_input: Value)
-    -> Result<ControlResponse, ClawError>
-{
-    let handlers = self.handlers.lock().await;
+### Phase 7: Testing (90 min)
+- Write comprehensive unit tests (~15-20 tests)
+- Write integration tests with Hook system
+- Test all PermissionMode variants
+- Test allowlist/denylist combinations
+- Test hook priority and decision flow
+- Verify no regressions in existing tests
+- **Files:** permissions/handler.rs, control/mod.rs
 
-    if let Some(handler) = handlers.hook_callbacks.get(hook_id) {
-        let result = handler.call(hook_event, hook_input).await?;
-        Ok(ControlResponse::Success { result })
-    } else {
-        Err(ClawError::ControlError(format!("No handler for hook_id: {}", hook_id)))
-    }
-}
-```
+### Phase 8: Documentation & Verification (30 min)
+- Write module-level docs with examples
+- Write rustdoc for all public types
+- Run full test suite (cargo test)
+- Run clippy (cargo clippy)
+- Verify acceptance criteria
+- Update .attractor/ docs
+- **Files:** permissions/mod.rs, permissions/handler.rs
 
-## Risks & Mitigations
-
-### 🟢 Low Risk
-- **Type definitions** - Straightforward enums/structs from SPEC
-  - Mitigation: Follow SPEC.md exactly, comprehensive serde tests
-
-### 🟡 Medium Risk
-- **Closure blanket impl** - Complex generic constraints
-  - Mitigation: Reference existing async-trait patterns, thorough testing
-  - Test with both trait objects and closures
-
-- **Hook matching logic** - Wildcard support complexity
-  - Mitigation: Start with exact matching, defer wildcards to future enhancement
-  - Document limitation clearly
-
-### 🔴 High Risk
-- **Control protocol integration** - Bridge between two handler traits
-  - Mitigation: Careful signature design, integration tests
-  - Keep HookHandler simple for control protocol
-  - Add richer HookCallback in hooks module for SDK users
-
-- **HookInput/HookContext design** - No clear spec
-  - Mitigation: Start minimal, extend as needed
-  - Make fields optional for forward compatibility
+**Total Estimated Time:** ~6.5 hours
 
 ## Success Criteria
 
-✅ **Acceptance Criteria from Task:**
+### Acceptance Criteria (from task description)
 
-1. **HookEvent enum** - Define events that can trigger hooks
-2. **HookMatcher** - Pattern matching for hook triggers
-3. **HookCallback trait** with blanket impl for closures
-4. **HookResponse** with permission decisions
-5. **Hook invocation routing** from control protocol callbacks
-6. **Comprehensive tests** (~20 unit tests + integration)
-7. **Complete documentation** with examples
+1. ✅ **PermissionMode enum** - Define permission check policies (Allow/Ask/Deny/Custom)
+2. ✅ **Tool allowlist** - Selective permission prompting with allowlist/denylist
+3. ✅ **can_use_tool callback handler** - Route permission checks through handlers
+4. ✅ **Hook integration** - Permission decisions through hooks with fallback
+5. ✅ **Default permission policy** - Fallback behavior based on PermissionMode
+6. ✅ **Comprehensive tests** - ~15-20 unit tests + integration tests with Hook system
+7. ✅ **Complete documentation** - Module-level docs with examples
 
-✅ **Technical Requirements:**
+### Quality Standards
 
-- All 141 existing tests continue to pass (no regressions)
-- 0 clippy warnings in new hook code
-- 100% documentation coverage of public API
-- Clean compilation under 5 seconds
-- Integration with control protocol tested
+- ✅ Zero compilation errors
+- ✅ Zero clippy warnings in new code
+- ✅ Zero test failures
+- ✅ Zero regressions in existing tests (126 unit + 44 doc tests)
+- ✅ 100% documentation coverage of public API
+- ✅ All doctests pass
 
-✅ **Code Quality:**
+## Dependencies
 
-- Thread-safe where needed (Arc/Mutex patterns)
-- Ergonomic API with builder patterns
-- Comprehensive error handling
-- Production-ready with examples
+**Completed Tasks (All Satisfied):**
+- ✅ rusty_claw-bip: Implement Hook system [P2] - **CLOSED**
 
-## Next Steps
+**Blocks Downstream Tasks:**
+- ○ rusty_claw-isy: Add integration tests [P2]
 
-1. ✅ Investigation complete
-2. Phase 1: Implement core types (HookEvent, HookMatcher, HookResponse)
-3. Phase 2: Implement HookCallback trait with blanket impl
-4. Phase 3: Create hooks module structure
-5. Phase 4: Integrate with control protocol
-6. Phase 5: Write comprehensive tests
-7. Phase 6: Add documentation and examples
-8. Phase 7: Verify all acceptance criteria
-9. Phase 8: Run full test suite and clippy
-10. Phase 9: Update task status and push
+## Risks & Considerations
+
+### 1. Breaking Changes
+**Risk:** Adding new PermissionMode variants might break existing code
+**Mitigation:** Keep existing variants unchanged, add new ones, update serialization carefully
+
+### 2. Hook Priority Logic
+**Risk:** Complex hook evaluation order could cause unexpected behavior
+**Mitigation:** Document hook priority clearly, add comprehensive tests, follow "first deny wins" rule
+
+### 3. Default Policy Confusion
+**Risk:** Multiple permission sources (allowlist, hooks, mode) could confuse users
+**Mitigation:** Clear documentation of evaluation order, simple priority rules, examples for each case
+
+### 4. Performance
+**Risk:** Hook invocation on every tool use could add latency
+**Mitigation:** Async trait already in place, hooks are optional, allowlist checked first
+
+### 5. Backward Compatibility
+**Risk:** Existing CanUseToolHandler implementations might break
+**Mitigation:** DefaultPermissionHandler is opt-in, existing handlers still work, no API changes to trait
+
+## Notes
+
+- **Python SDK Reference:** Check claude-agent-sdk-python for permission patterns
+- **Hook System:** Already complete with PermissionDecision (Allow/Deny/Ask) ✅
+- **Control Protocol:** Already routes can_use_tool to handlers ✅
+- **Test Coverage:** Existing 126 unit + 44 doc tests must continue passing ✅
+- **Clippy:** Target zero warnings in new code ✅
+
+## Open Questions
+
+None - all architecture decisions clear from task description and existing code.
 
 ---
 
-**Investigation Status:** ✅ COMPLETE
-**Ready to Implement:** YES
-**Estimated Duration:** 7.5 hours
-**Unblocks:** rusty_claw-s8q (permission management)
+**Status:** Ready for implementation (Phase 1)
+**Next Step:** Update PermissionMode enum with Ask/Deny/Custom variants

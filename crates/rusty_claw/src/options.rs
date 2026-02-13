@@ -57,6 +57,14 @@ pub enum PermissionMode {
     BypassPermissions,
     /// Plan mode requiring approval
     Plan,
+    /// Allow all tool use without prompting
+    Allow,
+    /// Prompt user for each tool use
+    Ask,
+    /// Deny all tool use
+    Deny,
+    /// Use custom permission logic via hooks
+    Custom,
 }
 
 impl PermissionMode {
@@ -67,6 +75,10 @@ impl PermissionMode {
             PermissionMode::AcceptEdits => "accept-edits",
             PermissionMode::BypassPermissions => "bypass-permissions",
             PermissionMode::Plan => "plan",
+            PermissionMode::Allow => "allow",
+            PermissionMode::Ask => "ask",
+            PermissionMode::Deny => "deny",
+            PermissionMode::Custom => "custom",
         }
     }
 }

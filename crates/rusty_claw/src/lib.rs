@@ -54,6 +54,9 @@ pub mod mcp {}
 /// Hook system for lifecycle events
 pub mod hooks;
 
+/// Permission management for tool usage control
+pub mod permissions;
+
 /// Error types and utilities
 pub mod error;
 
@@ -85,6 +88,7 @@ pub mod prelude {
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
     pub use crate::options::{ClaudeAgentOptions, HookEvent, HookMatcher, PermissionMode, SystemPrompt};
+    pub use crate::permissions::DefaultPermissionHandler;
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }
