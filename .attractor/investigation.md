@@ -1,514 +1,659 @@
-# Investigation: rusty_claw-b4s - Implement Subagent Support
+# Investigation: rusty_claw-bkm - Write Examples
 
-**Task ID:** rusty_claw-b4s
-**Priority:** P3
+**Task ID:** rusty_claw-bkm
 **Status:** IN_PROGRESS
+**Priority:** P3
 **Date:** 2026-02-13
 
 ---
 
 ## Executive Summary
 
-This task requires completing the subagent support infrastructure that is already partially implemented in the codebase. The `AgentDefinition` struct exists but needs to be properly integrated into the control protocol's initialize request, and the `SubagentStart`/`SubagentStop` hook events are already defined but need examples and documentation.
+This task requires creating 4 comprehensive examples demonstrating the core usage patterns of the Rusty Claw SDK. All required APIs exist and are functional - this is purely an example-writing task.
 
-**Current State:** ✅ Foundation exists (75% complete)
-- `AgentDefinition` struct is defined in `options.rs` with all required fields
-- `HookEvent` enum already includes `SubagentStart` and `SubagentStop` variants
-- `Initialize` control request already includes `agents` field
-- Builder pattern already supports `.agents()` method
+**Task Scope:**
+- Create 4 new example files (~510 lines total)
+- Zero modifications to existing SDK code
+- Follow established example pattern from subagent_usage.rs
+- Each example must be self-contained, well-documented, and pass clippy
 
-**What's Missing:** 🔨 Integration and documentation (25% remaining)
-1. Ensure `AgentDefinition` is properly serialized in initialize control request
-2. Add comprehensive tests for agent registration
-3. Create example showing subagent usage
-4. Document the subagent lifecycle and hook events
+**Current State:** ✅ All APIs exist and are ready to use
+- query() API is functional
+- ClaudeClient is complete with all control operations
+- #[claw_tool] proc macro is working
+- Hook system is fully implemented
+
+**What's Needed:** 📝 Example files only (no SDK changes)
+1. simple_query.rs - Demonstrate one-shot query API
+2. interactive_client.rs - Demonstrate ClaudeClient multi-turn sessions
+3. custom_tool.rs - Demonstrate tool creation with #[claw_tool]
+4. hooks_guardrails.rs - Demonstrate hook system for validation/monitoring
 
 ---
 
-## Current Implementation Analysis
+## Task Requirements
 
-### 1. AgentDefinition Struct (options.rs:202-213)
+Create 4 working examples demonstrating core SDK usage patterns:
 
-**Status:** ✅ COMPLETE
+1. **simple_query.rs** - Basic SDK usage with simple queries
+2. **interactive_client.rs** - Interactive multi-turn conversations using ClaudeClient
+3. **custom_tool.rs** - Implementing and registering custom tools
+4. **hooks_guardrails.rs** - Using hooks for guardrails and monitoring
 
+**Quality Requirements:**
+- Self-contained and runnable
+- Comprehensive inline comments
+- Module-level documentation with usage instructions
+- Zero clippy warnings
+- Follow existing example pattern (subagent_usage.rs)
+
+---
+
+## Dependencies
+
+✅ All satisfied:
+- rusty_claw-qrl (ClaudeClient) - CLOSED ✓
+- rusty_claw-tlh (SDK MCP Server bridge) - CLOSED ✓
+
+---
+
+## Existing Examples
+
+**Current examples:**
+- `crates/rusty_claw/examples/subagent_usage.rs` (120 lines)
+
+**Established Pattern:**
+- Module-level documentation with `//!`
+- Usage instructions in `# Usage` section
+- Main async function with `#[tokio::main]`
+- Detailed inline comments explaining each step
+- Print statements showing configuration
+- Commented-out code for real usage patterns
+
+---
+
+## API Investigation
+
+### 1. Simple Query API
+
+**File:** `crates/rusty_claw/src/query.rs`
+
+**Core Function:**
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentDefinition {
-    /// Agent description
-    pub description: String,
-    /// Agent prompt
-    pub prompt: String,
-    /// Allowed tools
-    pub tools: Vec<String>,
-    /// Model override
-    pub model: Option<String>,
+pub async fn query(
+    prompt: impl Into<String>,
+    options: Option<ClaudeAgentOptions>,
+) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError>
+```
+
+**Key Features:**
+- One-shot query to Claude
+- Returns stream of `Result<Message, ClawError>`
+- Automatically discovers and connects to Claude CLI
+- Stream owns transport (CLI stays alive while consuming)
+
+**Usage Pattern:**
+```rust
+use rusty_claw::query;
+use rusty_claw::options::{ClaudeAgentOptions, PermissionMode};
+use tokio_stream::StreamExt;
+
+let options = ClaudeAgentOptions::builder()
+    .max_turns(5)
+    .permission_mode(PermissionMode::AcceptEdits)
+    .build();
+
+let mut stream = query("What files are in this directory?", Some(options)).await?;
+
+while let Some(result) = stream.next().await {
+    match result {
+        Ok(Message::Assistant(msg)) => { /* handle */ },
+        Ok(Message::Result(msg)) => { /* done */ },
+        Err(e) => { /* error */ },
+        _ => {}
+    }
 }
 ```
 
-**Analysis:**
-- Matches SPEC.md section 5.1 exactly
-- Already has `Serialize`/`Deserialize` derives (required for control protocol)
-- All fields match Python SDK structure
-- Public API is correct
-
-**Verification:**
-```rust
-// From SPEC.md:
-// pub struct AgentDefinition {
-//     pub description: String,
-//     pub prompt: String,
-//     pub tools: Vec<String>,
-//     pub model: Option<String>,
-// }
-```
-✅ **No changes needed**
+**Key Types:**
+- `ClaudeAgentOptions` - Configuration (max_turns, permission_mode, model, etc.)
+- `Message` - Response types (Assistant, Result, System, etc.)
+- `QueryStream` - Stream wrapper that owns transport
 
 ---
 
-### 2. HookEvent Enum (options.rs:128-151)
+### 2. ClaudeClient API
 
-**Status:** ✅ COMPLETE
+**File:** `crates/rusty_claw/src/client.rs`
 
+**Lifecycle Methods:**
 ```rust
-#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+// Create client
+ClaudeClient::new(options: ClaudeAgentOptions) -> Result<Self, ClawError>
+
+// Connect and initialize session
+connect() -> Result<(), ClawError>
+
+// Send message and get response stream
+send_message(content) -> Result<ResponseStream, ClawError>
+
+// Close session gracefully
+close() -> Result<(), ClawError>
+```
+
+**Control Operations:**
+```rust
+interrupt() -> Result<(), ClawError>                    // Cancel execution
+set_permission_mode(mode) -> Result<(), ClawError>      // Change permissions
+set_model(model) -> Result<(), ClawError>               // Switch model
+mcp_status() -> Result<Value, ClawError>                // Query MCP status
+rewind_files(message_id) -> Result<(), ClawError>       // Undo file changes
+```
+
+**Handler Registration:**
+```rust
+register_can_use_tool_handler(handler)  // Custom tool permissions
+register_hook(hook_id, handler)         // Hook callbacks
+register_mcp_message_handler(handler)   // MCP messages
+```
+
+**Usage Pattern:**
+```rust
+// Create and connect
+let options = ClaudeAgentOptions::builder()
+    .max_turns(10)
+    .permission_mode(PermissionMode::AcceptEdits)
+    .build();
+
+let mut client = ClaudeClient::new(options)?;
+client.connect().await?;
+
+// Send message
+let mut stream = client.send_message("What files are in this directory?").await?;
+
+while let Some(result) = stream.next().await {
+    match result {
+        Ok(Message::Assistant(msg)) => { /* handle */ },
+        Ok(Message::Result(_)) => break,
+        Ok(_) => {},
+        Err(e) => { /* error */ },
+    }
+}
+
+// Control operations
+client.interrupt().await?;
+client.set_model("claude-sonnet-4-5").await?;
+client.set_permission_mode(PermissionMode::Ask).await?;
+
+// Close
+client.close().await?;
+```
+
+**Key Traits:**
+- `CanUseToolHandler` - Permission checking
+- `HookHandler` - Hook callback implementation
+- `McpMessageHandler` - MCP message handling
+
+---
+
+### 3. Custom Tool API
+
+**File:** `crates/rusty_claw_macros/src/lib.rs`
+
+**Proc Macro Usage:**
+```rust
+#[claw_tool(name = "tool-name", description = "Tool description")]
+async fn tool_function(param1: String, param2: i32, opt: Option<String>) -> ToolResult {
+    // Tool logic
+    ToolResult::text(format!("Result: {}", param1))
+}
+
+// Generated function returns SdkMcpTool
+let tool = tool_function();
+```
+
+**Manual Tool Creation:**
+```rust
+use async_trait::async_trait;
+
+struct CustomHandler;
+
+#[async_trait]
+impl ToolHandler for CustomHandler {
+    async fn call(&self, args: Value) -> Result<ToolResult, ClawError> {
+        let name = args["name"].as_str().unwrap_or("World");
+        Ok(ToolResult::text(format!("Hello, {}!", name)))
+    }
+}
+
+let tool = SdkMcpTool::new(
+    "greet",
+    "Greet someone by name",
+    json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" }
+        },
+        "required": ["name"]
+    }),
+    Arc::new(CustomHandler)
+);
+```
+
+**Server Registration:**
+```rust
+use rusty_claw::mcp_server::{SdkMcpServerImpl, SdkMcpServerRegistry};
+
+// Create server
+let mut server = SdkMcpServerImpl::new("my-tools", "1.0.0");
+server.register_tool(tool1);
+server.register_tool(tool2);
+
+// Register with client (via registry)
+let registry = Arc::new(SdkMcpServerRegistry::new());
+registry.register_server("my-tools", server).await;
+
+client.register_mcp_message_handler(registry).await;
+```
+
+**ToolResult API:**
+```rust
+ToolResult::text("response text")           // Text content
+ToolResult::error("error message")          // Error result
+ToolContent::image("base64", "image/png")   // Image content
+```
+
+**Supported Parameter Types:**
+- `String`, `str` - JSON string
+- `i32`, `i64`, `u32`, `u64`, `f32`, `f64` - JSON number
+- `bool` - JSON boolean
+- `Option<T>` - Optional parameter (not required)
+- `Vec<T>` - JSON array
+
+---
+
+### 4. Hooks API
+
+**File:** `crates/rusty_claw/src/options.rs`
+
+**Hook Events:**
+```rust
 pub enum HookEvent {
-    // ... other events ...
-    SubagentStop,    // Line 142
-    SubagentStart,   // Line 144
-    // ... other events ...
+    ToolUse,            // When a tool is used
+    Start,              // When agent starts
+    Stop,               // When agent stops
+    SubagentStart,      // When subagent starts
+    SubagentStop,       // When subagent stops
+    PreCompact,         // Before compaction
+    Notification,       // System notification
+    PermissionRequest,  // Permission request
 }
 ```
 
-**Analysis:**
-- Both `SubagentStart` and `SubagentStop` variants exist
-- Properly annotated with `#[serde(rename_all = "PascalCase")]`
-- Will serialize as `"SubagentStart"` and `"SubagentStop"` in JSON
-
-**Verification:**
+**Hook Matcher:**
 ```rust
-// From SPEC.md section 6.1:
-// pub enum HookEvent {
-//     SubagentStop,
-//     SubagentStart,
-// }
-```
-✅ **No changes needed**
-
----
-
-### 3. ClaudeAgentOptions (options.rs:234-303)
-
-**Status:** ✅ COMPLETE
-
-```rust
-pub struct ClaudeAgentOptions {
-    // ... other fields ...
-
-    // Subagents (placeholder for future tasks)
-    /// Agent definitions
-    pub agents: HashMap<String, AgentDefinition>,  // Line 268
-
-    // ... other fields ...
+pub struct HookMatcher {
+    pub tool_name: Option<String>,  // e.g., Some("Bash"), None for all
 }
+
+// Helper constructors
+HookMatcher::all()           // Match all tools
+HookMatcher::tool("Bash")    // Match specific tool
 ```
 
-**Analysis:**
-- `agents` field exists with correct type
-- Uses `HashMap<String, AgentDefinition>` (agent name → definition)
-- Already included in builder pattern
-
-**Verification:**
+**Hook Configuration:**
 ```rust
-// From SPEC.md section 5.1:
-// pub agents: HashMap<String, AgentDefinition>
+let mut hooks = HashMap::new();
+
+// Match Bash tool use
+hooks.insert(
+    HookEvent::ToolUse,
+    vec![HookMatcher::tool("Bash")]
+);
+
+// Match all tools for Start event
+hooks.insert(
+    HookEvent::Start,
+    vec![HookMatcher::all()]
+);
+
+let options = ClaudeAgentOptions::builder()
+    .hooks(hooks)
+    .build();
 ```
-✅ **No changes needed**
+
+**Hook Handler Implementation:**
+```rust
+use async_trait::async_trait;
+
+struct GuardrailHook;
+
+#[async_trait]
+impl HookHandler for GuardrailHook {
+    async fn call(&self, event: HookEvent, input: Value) -> Result<Value, ClawError> {
+        // Validation logic
+        let tool_name = input["tool_name"].as_str().unwrap_or("");
+        let tool_input = &input["tool_input"];
+
+        // Check if allowed
+        if tool_name == "Bash" && tool_input["command"].as_str().unwrap_or("").contains("rm -rf") {
+            return Ok(json!({"approved": false, "reason": "Dangerous command"}));
+        }
+
+        Ok(json!({"approved": true}))
+    }
+}
+
+// Register hook
+client.register_hook("guardrail".to_string(), Arc::new(GuardrailHook)).await;
+```
 
 ---
 
-### 4. ClaudeAgentOptionsBuilder (options.rs:440-594)
+## Implementation Plan
 
-**Status:** ✅ COMPLETE
+### Phase 1: simple_query.rs (30 min)
 
+**Goal:** Demonstrate basic one-shot query API
+
+**File:** `crates/rusty_claw/examples/simple_query.rs`
+
+**Structure:**
 ```rust
-impl ClaudeAgentOptionsBuilder {
-    // ... other methods ...
+//! Simple query example demonstrating basic SDK usage
+//!
+//! This example shows how to:
+//! - Configure options with ClaudeAgentOptions::builder()
+//! - Execute a one-shot query using query()
+//! - Stream and handle response messages
+//! - Process different message types
+//!
+//! # Usage
+//!
+//! ```bash
+//! cargo run --example simple_query --package rusty_claw
+//! ```
 
-    /// Set agents
-    pub fn agents(mut self, agents: HashMap<String, AgentDefinition>) -> Self {
-        self.inner.agents = agents;  // Line 513-516
-        self
+use rusty_claw::prelude::*;
+use tokio_stream::StreamExt;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=== Rusty Claw Simple Query Example ===\n");
+
+    // Configure options
+    let options = ClaudeAgentOptions::builder()
+        .max_turns(5)
+        .permission_mode(PermissionMode::AcceptEdits)
+        .model("claude-sonnet-4-5".to_string())
+        .build();
+
+    println!("Options configured:");
+    println!("  - Max turns: {:?}", options.max_turns);
+    println!("  - Permission mode: {:?}", options.permission_mode);
+    println!("  - Model: {:?}", options.model);
+    println!();
+
+    // Execute query
+    println!("Sending query...\n");
+    let mut stream = query("What files are in this directory?", Some(options)).await?;
+
+    // Stream responses
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(Message::Assistant(msg)) => {
+                // Handle assistant text
+                for block in msg.message.content {
+                    if let ContentBlock::Text { text } = block {
+                        println!("Claude: {}", text);
+                    }
+                }
+            }
+            Ok(Message::Result(msg)) => {
+                println!("\nResult: {:?}", msg);
+                break;
+            }
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                break;
+            }
+        }
     }
 
-    // ... other methods ...
+    Ok(())
 }
 ```
 
-**Analysis:**
-- Builder method exists with correct signature
-- Follows same pattern as other builder methods
+**Estimated Lines:** ~100 lines
 
-**Verification:**
-✅ **No changes needed**
-
----
-
-### 5. Initialize Control Request (control/messages.rs:56-95)
-
-**Status:** ✅ COMPLETE
-
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "subtype", rename_all = "snake_case")]
-pub enum ControlRequest {
-    Initialize {
-        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-        hooks: HashMap<HookEvent, Vec<HookMatcher>>,
-
-        /// Agent definitions for spawning subagents
-        #[serde(skip_serializing_if = "HashMap::is_empty", default)]
-        agents: HashMap<String, AgentDefinition>,  // Line 82-83
-
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        sdk_mcp_servers: Vec<SdkMcpServer>,
-
-        #[serde(skip_serializing_if = "Option::is_none")]
-        permissions: Option<PermissionMode>,
-
-        can_use_tool: bool,
-    },
-    // ... other variants ...
-}
-```
-
-**Analysis:**
-- `agents` field is properly included in `Initialize` variant
-- Has correct serde attributes:
-  - `#[serde(skip_serializing_if = "HashMap::is_empty", default)]` - omits empty maps
-- Type is correct: `HashMap<String, AgentDefinition>`
-- Documentation comment exists
-
-**Verification:**
-```rust
-// From SPEC.md section 4.3:
-// Initialize {
-//     hooks: HashMap<HookEvent, Vec<HookMatcher>>,
-//     agents: HashMap<String, AgentDefinition>,  // ✅
-//     sdk_mcp_servers: Vec<SdkMcpServer>,
-//     permissions: Option<PermissionMode>,
-//     can_use_tool: bool,
-// }
-```
-✅ **No changes needed**
+**Success Criteria:**
+- ✅ Compiles without warnings
+- ✅ Demonstrates query() API
+- ✅ Shows ClaudeAgentOptions builder
+- ✅ Handles all message types
+- ✅ Comprehensive comments
 
 ---
 
-## What Needs to Be Done
+### Phase 2: interactive_client.rs (40 min)
 
-### Task 1: Add Integration Test for Agent Registration
+**Goal:** Demonstrate multi-turn conversation with ClaudeClient
 
-**File:** `crates/rusty_claw/tests/integration/agent_test.rs` (NEW FILE)
+**File:** `crates/rusty_claw/examples/interactive_client.rs`
 
-**Purpose:** Verify that agents are properly serialized in the initialize control request
-
-**Test Cases:**
-1. ✅ `test_agent_definition_serialization` - Verify AgentDefinition serializes correctly
-2. ✅ `test_initialize_with_agents` - Verify Initialize request includes agents field
-3. ✅ `test_agent_registration_empty` - Verify empty agents map is omitted from JSON
-4. ✅ `test_agent_registration_multiple` - Verify multiple agents serialize correctly
+**Key Demonstrations:**
+1. ClaudeClient lifecycle (new → connect → send → close)
+2. Streaming responses
+3. Multi-turn conversation
+4. Control operations (interrupt, set_model, set_permission_mode)
+5. Error handling
 
 **Estimated Lines:** ~150 lines
 
----
-
-### Task 2: Create Subagent Example
-
-**File:** `examples/subagent_usage.rs` (NEW FILE)
-
-**Purpose:** Demonstrate how to define and use subagents with hooks
-
-**Estimated Lines:** ~60 lines
+**Success Criteria:**
+- ✅ Compiles without warnings
+- ✅ Demonstrates complete client lifecycle
+- ✅ Shows control operations
+- ✅ Multi-turn conversation pattern
+- ✅ Comprehensive comments
 
 ---
 
-### Task 3: Add Subagent Hook Documentation
+### Phase 3: custom_tool.rs (40 min)
 
-**File:** `docs/HOOKS.md` (NEW SECTION)
+**Goal:** Demonstrate tool creation with #[claw_tool] macro
 
-**Purpose:** Document SubagentStart and SubagentStop hook lifecycle
+**File:** `crates/rusty_claw/examples/custom_tool.rs`
 
-**Estimated Lines:** ~80 lines
+**Tools to Demonstrate:**
+1. **Calculator** - Simple math (add, multiply) with i32 params
+2. **Formatter** - String manipulation with String and Option<String>
+3. **Echo** - Echo back input with optional prefix
 
----
+**Key Demonstrations:**
+- #[claw_tool] macro usage
+- Different parameter types (String, i32, Option<T>)
+- ToolResult creation
+- SdkMcpServerImpl setup
+- Tool registration
+- Server registration with client
 
-### Task 4: Update README/Main Documentation
-
-**File:** `README.md` or `docs/README.md`
-
-**Purpose:** Add subagent section to main documentation
-
-**Estimated Lines:** ~30 lines
-
----
-
-## Files to Create/Modify
-
-### New Files (3 files, ~290 lines total)
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `crates/rusty_claw/tests/integration/agent_test.rs` | ~150 | Integration tests for agent registration |
-| `examples/subagent_usage.rs` | ~60 | Example showing subagent usage |
-| `docs/HOOKS.md` (new section) | ~80 | Document SubagentStart/SubagentStop hooks |
-
-### Modified Files (1 file, ~30 lines added)
-
-| File | Changes | Purpose |
-|------|---------|---------|
-| `README.md` or `docs/README.md` | Add subagent section | User-facing documentation |
-
-### No Changes Required (5 files, 0 lines)
-
-| File | Reason |
-|------|--------|
-| `crates/rusty_claw/src/options.rs` | AgentDefinition already complete |
-| `crates/rusty_claw/src/control/messages.rs` | Initialize already includes agents |
-
----
-
-## Dependencies & Prerequisites
-
-### ✅ Satisfied Dependencies
-
-1. **rusty_claw-qrl** (Implement ClaudeClient) - CLOSED ✓
-   - ClaudeClient exists and is functional
-   - Control protocol is implemented
-   - Initialize request is working
-
-### 🔗 No Blockers
-
-All required infrastructure exists:
-- ✅ `AgentDefinition` struct is complete
-- ✅ `HookEvent::SubagentStart` and `HookEvent::SubagentStop` exist
-- ✅ `Initialize` control request includes `agents` field
-- ✅ Builder pattern supports `.agents()` method
-- ✅ Serialization/deserialization works (derives present)
-
----
-
-## Testing Strategy
-
-### Integration Tests (Required)
-
-**File:** `crates/rusty_claw/tests/integration/agent_test.rs`
-
-**Test Coverage:**
-1. ✅ AgentDefinition serialization
-2. ✅ Initialize request with agents
-3. ✅ Empty agents map handling (should be omitted from JSON)
-4. ✅ Multiple agents in single request
-5. ✅ Optional model field (Some vs None)
-
-**Execution:**
-```bash
-cargo test --test agent_test
-```
-
----
-
-## Implementation Phases
-
-### Phase 1: Integration Tests (30 min)
-
-**Goal:** Verify agent registration works correctly
-
-**Tasks:**
-1. Create `tests/integration/agent_test.rs`
-2. Write 4 test cases (serialization, registration, empty, multiple)
-3. Run tests with `cargo test --test agent_test`
-4. Verify all tests pass
+**Estimated Lines:** ~120 lines
 
 **Success Criteria:**
-- ✅ All 4 tests pass
-- ✅ AgentDefinition serializes to correct JSON
-- ✅ Initialize request includes agents field
-- ✅ Empty agents map is omitted from JSON
+- ✅ Compiles without warnings
+- ✅ Demonstrates #[claw_tool] macro
+- ✅ Shows multiple parameter types
+- ✅ Server registration pattern
+- ✅ Comprehensive comments
 
 ---
 
-### Phase 2: Example Code (20 min)
+### Phase 4: hooks_guardrails.rs (45 min)
 
-**Goal:** Demonstrate subagent usage
+**Goal:** Demonstrate hook system for guardrails and monitoring
 
-**Tasks:**
-1. Create `examples/subagent_usage.rs`
-2. Define 2 example agents (researcher, writer)
-3. Show hook registration for SubagentStart/SubagentStop
-4. Add comprehensive documentation comments
+**File:** `crates/rusty_claw/examples/hooks_guardrails.rs`
+
+**Hooks to Demonstrate:**
+1. **GuardrailHook** - Validate tool inputs, block dangerous commands
+2. **LoggingHook** - Log all tool usage and track metrics
+3. **RateLimitHook** - Enforce rate limits on tool calls
+
+**Key Demonstrations:**
+- HookHandler trait implementation
+- HookEvent enum usage
+- HookMatcher configuration
+- Hook registration with ClaudeClient
+- Validation logic patterns
+- Logging/monitoring patterns
+
+**Estimated Lines:** ~140 lines
 
 **Success Criteria:**
-- ✅ Example compiles without errors
-- ✅ Code is well-documented
-- ✅ Shows both agent definition and hook usage
+- ✅ Compiles without warnings
+- ✅ Demonstrates hook system
+- ✅ Shows validation patterns
+- ✅ Shows logging patterns
+- ✅ Comprehensive comments
 
 ---
 
-### Phase 3: Hook Documentation (25 min)
+### Phase 5: Testing & Verification (20 min)
 
-**Goal:** Document SubagentStart/SubagentStop hooks
-
-**Tasks:**
-1. Create or update `docs/HOOKS.md`
-2. Add SubagentStart hook documentation
-3. Add SubagentStop hook documentation
-4. Include JSON examples and code samples
-
-**Success Criteria:**
-- ✅ Hook input format documented
-- ✅ Use cases listed
-- ✅ Code examples provided
-
----
-
-### Phase 4: Main Documentation (15 min)
-
-**Goal:** Add subagent section to README
+**Goal:** Ensure all examples compile and pass quality checks
 
 **Tasks:**
-1. Update `README.md` or `docs/README.md`
-2. Add subagent section with code example
-3. Link to example file and hooks documentation
-
-**Success Criteria:**
-- ✅ Subagent section added to main docs
-- ✅ Links to examples and detailed docs
-- ✅ Clear, concise explanation
-
----
-
-### Phase 5: Verification (10 min)
-
-**Goal:** Ensure everything works together
-
-**Tasks:**
-1. Run all tests: `cargo test`
-2. Build examples: `cargo build --examples`
+1. Compile all examples: `cargo build --examples --package rusty_claw`
+2. Run clippy: `cargo clippy --examples --package rusty_claw`
 3. Check documentation: `cargo doc --open`
-4. Verify no clippy warnings: `cargo clippy`
+4. Manual review of comments and structure
 
 **Success Criteria:**
-- ✅ All tests pass
-- ✅ All examples compile
-- ✅ Documentation builds
+- ✅ All 4 examples compile
 - ✅ Zero clippy warnings
+- ✅ Clear, comprehensive documentation
+- ✅ Follows established pattern
 
 ---
 
-## Acceptance Criteria
+## Files to Create
 
-From task description: "Implement AgentDefinition struct and subagent configuration in options. Support SubagentStart/SubagentStop hook events and agent registration in the initialize control request."
+### New Files (4 files, ~510 lines total)
 
-### Requirement 1: AgentDefinition struct ✅ COMPLETE
+| File | Lines | Purpose | Time |
+|------|-------|---------|------|
+| `crates/rusty_claw/examples/simple_query.rs` | ~100 | One-shot query demo | 30 min |
+| `crates/rusty_claw/examples/interactive_client.rs` | ~150 | Multi-turn session demo | 40 min |
+| `crates/rusty_claw/examples/custom_tool.rs` | ~120 | Tool creation demo | 40 min |
+| `crates/rusty_claw/examples/hooks_guardrails.rs` | ~140 | Hook system demo | 45 min |
+| **Total** | **~510** | **All examples** | **155 min** |
 
-**Status:** ✅ Already implemented in `options.rs:202-213`
+### No Files Modified
 
-### Requirement 2: Subagent configuration in options ✅ COMPLETE
-
-**Status:** ✅ Already implemented in `options.rs:268` and builder at `options.rs:513-516`
-
-### Requirement 3: SubagentStart/SubagentStop hook events ✅ COMPLETE
-
-**Status:** ✅ Already implemented in `options.rs:142-144`
-
-### Requirement 4: Agent registration in initialize control request ✅ COMPLETE
-
-**Status:** ✅ Already implemented in `control/messages.rs:82-83`
-
----
-
-## What Actually Needs Implementation
-
-### Core Implementation: ✅ 100% COMPLETE
-
-All required code already exists:
-- ✅ AgentDefinition struct
-- ✅ HookEvent variants
-- ✅ Options field and builder
-- ✅ Initialize request field
-
-### Testing & Documentation: 🔨 0% COMPLETE (Required Work)
-
-What needs to be added:
-1. Integration tests (~150 lines)
-2. Example code (~60 lines)
-3. Hook documentation (~80 lines)
-4. README section (~30 lines)
-
-**Total New Code:** ~320 lines across 3-4 files
+This task only creates new examples - zero changes to SDK code.
 
 ---
 
 ## Risk Assessment
 
-### Low Risk
+### Risk Level: 🟢 LOW
 
 **Why:**
-- All core infrastructure already exists and is tested
-- No changes to existing code required
-- Only adding tests and documentation
-- No breaking changes
-- No complex logic to implement
+- All required APIs exist and are functional
+- Simple file creation task
+- Examples are isolated from SDK codebase
+- Clear pattern to follow (subagent_usage.rs)
+- No breaking changes possible
 
-### Success Probability
-
-**95% - Very High**
+### Success Probability: 95% (Very High)
 
 **Reasoning:**
-1. Core implementation is complete (verified by code inspection)
-2. Only need to add tests and examples (straightforward)
-3. No dependencies on external tasks
-4. Clear specification in SPEC.md
-5. Similar patterns already exist in codebase
+1. All APIs are complete and tested
+2. Clear example pattern exists
+3. Well-defined requirements
+4. No dependencies on external work
+5. Straightforward implementation
 
 ---
 
 ## Time Estimate
 
-| Phase | Task | Duration |
-|-------|------|----------|
-| 1 | Write integration tests | 30 min |
-| 2 | Create example code | 20 min |
-| 3 | Write hook documentation | 25 min |
-| 4 | Update main documentation | 15 min |
-| 5 | Verification and testing | 10 min |
-| **Total** | | **100 min (1.7 hours)** |
+| Phase | Duration | Task |
+|-------|----------|------|
+| 1 | 30 min | simple_query.rs |
+| 2 | 40 min | interactive_client.rs |
+| 3 | 40 min | custom_tool.rs |
+| 4 | 45 min | hooks_guardrails.rs |
+| 5 | 20 min | Testing & verification |
+| **Total** | **2.9 hours** | **All 4 examples** |
+
+---
+
+## Acceptance Criteria
+
+✅ **All 4 examples created:**
+
+1. ✅ simple_query.rs - Basic SDK usage with query()
+2. ✅ interactive_client.rs - Multi-turn conversations with ClaudeClient
+3. ✅ custom_tool.rs - Tool creation with #[claw_tool]
+4. ✅ hooks_guardrails.rs - Hook system for guardrails/monitoring
+
+**Quality Criteria:**
+- Self-contained and runnable
+- Comprehensive inline comments
+- Module-level documentation
+- Zero clippy warnings
+- Follows existing example pattern
+
+---
+
+## Key Patterns Demonstrated
+
+### simple_query.rs
+- query() function usage
+- ClaudeAgentOptions builder pattern
+- Message stream handling
+- Error handling
+
+### interactive_client.rs
+- ClaudeClient lifecycle
+- ResponseStream consumption
+- Control operations
+- Multi-turn conversation
+
+### custom_tool.rs
+- #[claw_tool] proc macro
+- ToolHandler trait
+- SdkMcpServerImpl setup
+- Tool registration
+- Parameter types
+
+### hooks_guardrails.rs
+- HookHandler trait
+- HookEvent enum
+- HookMatcher configuration
+- Validation logic
+- Logging/monitoring
 
 ---
 
 ## Summary
 
-**Status:** ✅ Ready to implement (all blockers cleared)
+**Status:** ✅ Ready to implement
+**Complexity:** 🟢 LOW - Example creation only
+**Scope:** 4 new files (~510 lines)
+**Dependencies:** All satisfied
+**Risk:** Very low (isolated examples)
+**Time:** 2.9 hours
+**Confidence:** 95% - Very high
 
-**Complexity:** 🟢 LOW - Core implementation already complete
-
-**Scope:** Testing + Documentation only (~320 new lines)
-
-**Confidence:** 95% - High confidence of success
-
-**Estimated Time:** 1.7 hours
-
-**Key Finding:** The task description says "Implement AgentDefinition struct and subagent configuration" but this work is already complete! The actual work needed is:
-- Add comprehensive integration tests
-- Create usage examples
-- Document the hook events
-- Update user-facing documentation
-
-This is a documentation and testing task, not an implementation task.
+**Key Insight:** This is a documentation task, not an implementation task. All SDK APIs are complete and functional. We're just creating examples to show users how to use them.
 
 ---
 
 **Investigation Status:** ✅ COMPLETE
 **Ready to Proceed:** YES
 **Blockers:** NONE
-**Next Action:** Phase 1 - Write integration tests
+**Next Action:** Phase 1 - Create simple_query.rs
