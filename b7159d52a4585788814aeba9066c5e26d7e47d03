@@ -1,0 +1,23 @@
+crates/rusty_claw/src/transport/subprocess.rs
+  dc65b6f84b9b51b8 66,115,350,390-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "b7159d52a4585788814aeba9066c5e26d7e47d03",
+  "prompts": {
+    "dc65b6f84b9b51b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1bea218b-3057-4562-b82a-41ceafb82e5e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 12,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  }
+}
