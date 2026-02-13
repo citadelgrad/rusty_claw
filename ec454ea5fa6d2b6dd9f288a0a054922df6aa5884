@@ -1,0 +1,70 @@
+.attractor/current_task.md
+  b47f630e99fe5a8e 1,3,5,10,13,15-18,21,25-31,33-39,41-47,49-50,52-55,58-59,62-66,69-72
+crates/rusty_claw/src/lib.rs
+  d058be84470cabb8 67-72,84
+crates/rusty_claw/src/query.rs
+  d058be84470cabb8 1-199
+.attractor/investigation.md
+  381519acdd006083 1,3-4,8,10,14-18,20-24,26-29,31,33-35,37,39,41,44-133,137-142,144,146,149-164,168,170-171,174,176-180,182-185,187-191,193-196,198,200-208,210,212-217,219-222,224,226,228-232,234-238,240-244,246-249,251,253-254,256-257,259-260,262,264-268,270-274,276,278-280,282-284,286-288,292-296,300-360,362-365
+.attractor/test-results-sna.txt
+  572aedb96d88c5d0 1,3-5,7-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "ec454ea5fa6d2b6dd9f288a0a054922df6aa5884",
+  "prompts": {
+    "381519acdd006083": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "755660b2-100a-44e8-adc0-b915340492d7",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 314,
+      "total_deletions": 253,
+      "accepted_lines": 314,
+      "overriden_lines": 0
+    },
+    "572aedb96d88c5d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "efa3b9ab-41c0-42ef-a643-dc53d9d818f3",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 251,
+      "total_deletions": 57,
+      "accepted_lines": 251,
+      "overriden_lines": 0
+    },
+    "b47f630e99fe5a8e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bd31334-863c-404f-a671-c053dcee6302",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 52,
+      "total_deletions": 46,
+      "accepted_lines": 52,
+      "overriden_lines": 0
+    },
+    "d058be84470cabb8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f5d8ff13-5123-4287-9d44-6049c71d28b2",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 230,
+      "total_deletions": 24,
+      "accepted_lines": 206,
+      "overriden_lines": 0
+    }
+  }
+}
