@@ -1,1 +1,7 @@
 .beads/
+
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock

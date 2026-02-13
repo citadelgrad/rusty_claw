@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rusty_claw",
+    "crates/rusty_claw_macros",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["rusty_claw contributors"]
+repository = "https://github.com/anthropics/rusty_claw"
+homepage = "https://github.com/anthropics/rusty_claw"
+documentation = "https://docs.rs/rusty_claw"
+
+[workspace.dependencies]
+# Core async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-stream = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+tracing = "0.1"
+async-trait = "0.1"
+
+# Proc macro tools
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

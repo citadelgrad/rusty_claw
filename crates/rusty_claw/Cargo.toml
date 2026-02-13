@@ -1,0 +1,31 @@
+[package]
+name = "rusty_claw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Rust implementation of the Claude Agent SDK"
+keywords = ["anthropic", "claude", "agent", "sdk", "mcp"]
+categories = ["api-bindings", "asynchronous"]
+
+[dependencies]
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+
+# Re-export macros from the proc-macro crate
+rusty_claw_macros = { path = "../rusty_claw_macros" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+default = []

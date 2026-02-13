@@ -1,0 +1,20 @@
+[package]
+name = "rusty_claw_macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Procedural macros for rusty_claw"
+keywords = ["anthropic", "claude", "agent", "sdk", "macros"]
+categories = ["api-bindings"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
