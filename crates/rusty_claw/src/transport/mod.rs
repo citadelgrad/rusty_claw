@@ -1,6 +1,6 @@
 //! Transport abstraction for communicating with Claude Code CLI
 //!
-//! This module provides the [`Transport`] trait, which defines an async interface for
+//! This module provides the `Transport` trait, which defines an async interface for
 //! establishing connections, sending messages, and receiving responses from the Claude CLI.
 //!
 //! # Overview
@@ -14,12 +14,12 @@
 //!
 //! # Default Implementation
 //!
-//! [`SubprocessCLITransport`] is the default implementation that spawns the `claude` CLI
+//! `SubprocessCLITransport` is the default implementation that spawns the `claude` CLI
 //! as a subprocess and communicates over stdin/stdout pipes.
 //!
 //! # Custom Transports
 //!
-//! The [`Transport`] trait can be implemented for custom transports (e.g., remote connections,
+//! The `Transport` trait can be implemented for custom transports (e.g., remote connections,
 //! mock transports for testing, or alternative CLI implementations).
 //!
 //! # Example

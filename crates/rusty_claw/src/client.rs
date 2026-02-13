@@ -1,7 +1,7 @@
 //! ClaudeClient for interactive sessions with Claude CLI
 //!
 //! The `ClaudeClient` provides a high-level API for maintaining long-running interactive sessions
-//! with the Claude Code CLI. Unlike the one-shot [`query()`](crate::query) API, `ClaudeClient`
+//! with the Claude Code CLI. Unlike the one-shot `query()` API, `ClaudeClient`
 //! maintains a persistent connection and allows:
 //!
 //! - **Multiple message exchanges** - Send messages and receive streaming responses

@@ -35,7 +35,7 @@ tokio = { workspace = true, features = ["test-util"] }
 # Mock CLI binary for integration tests
 [[bin]]
 name = "mock_cli"
-path = "tests/mock_cli.rs"
+path = "test_support/mock_cli.rs"
 test = false
 
 # Integration test suite

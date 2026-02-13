@@ -5,16 +5,16 @@
 //!
 //! # Error Variants
 //!
-//! - [`ClawError::CliNotFound`]: Claude Code CLI binary not found during discovery
-//! - [`ClawError::InvalidCliVersion`]: CLI version is older than required (< 2.0.0)
-//! - [`ClawError::Connection`]: Transport connection failures
-//! - [`ClawError::Process`]: CLI process crashes or non-zero exits
-//! - [`ClawError::JsonDecode`]: JSONL parsing errors (auto-converts from `serde_json::Error`)
-//! - [`ClawError::MessageParse`]: Malformed control protocol messages
-//! - [`ClawError::ControlTimeout`]: Control protocol request timeouts
-//! - [`ClawError::ControlError`]: Control protocol semantic errors
-//! - [`ClawError::Io`]: Filesystem and I/O operations (auto-converts from `std::io::Error`)
-//! - [`ClawError::ToolExecution`]: MCP tool handler failures
+//! - `ClawError::CliNotFound`: Claude Code CLI binary not found during discovery
+//! - `ClawError::InvalidCliVersion`: CLI version is older than required (< 2.0.0)
+//! - `ClawError::Connection`: Transport connection failures
+//! - `ClawError::Process`: CLI process crashes or non-zero exits
+//! - `ClawError::JsonDecode`: JSONL parsing errors (auto-converts from `serde_json::Error`)
+//! - `ClawError::MessageParse`: Malformed control protocol messages
+//! - `ClawError::ControlTimeout`: Control protocol request timeouts
+//! - `ClawError::ControlError`: Control protocol semantic errors
+//! - `ClawError::Io`: Filesystem and I/O operations (auto-converts from `std::io::Error`)
+//! - `ClawError::ToolExecution`: MCP tool handler failures
 //!
 //! # Example
 //!

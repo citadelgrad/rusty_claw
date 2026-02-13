@@ -5,19 +5,19 @@
 //!
 //! # Message Types
 //!
-//! The primary [`Message`] enum represents all possible messages from the CLI:
-//! - [`Message::System`] - System lifecycle events (init, compact boundary)
-//! - [`Message::Assistant`] - Assistant responses with content blocks
-//! - [`Message::User`] - User input messages
-//! - [`Message::Result`] - Final results (success, error, input required)
+//! The primary `Message` enum represents all possible messages from the CLI:
+//! - `Message::System` - System lifecycle events (init, compact boundary)
+//! - `Message::Assistant` - Assistant responses with content blocks
+//! - `Message::User` - User input messages
+//! - `Message::Result` - Final results (success, error, input required)
 //!
 //! # Content Blocks
 //!
-//! Assistant messages contain [`ContentBlock`] items:
-//! - [`ContentBlock::Text`] - Plain text content
-//! - [`ContentBlock::ToolUse`] - Tool invocation requests
-//! - [`ContentBlock::ToolResult`] - Tool execution results
-//! - [`ContentBlock::Thinking`] - Extended thinking tokens
+//! Assistant messages contain `ContentBlock` items:
+//! - `ContentBlock::Text` - Plain text content
+//! - `ContentBlock::ToolUse` - Tool invocation requests
+//! - `ContentBlock::ToolResult` - Tool execution results
+//! - `ContentBlock::Thinking` - Extended thinking tokens
 //!
 //! # Test Fixtures
 //!

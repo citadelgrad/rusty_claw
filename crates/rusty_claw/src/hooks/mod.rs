@@ -12,12 +12,12 @@
 //!
 //! The hook system consists of several key components:
 //!
-//! - [`HookEvent`](crate::HookEvent) - Events that trigger hooks (defined in options.rs)
-//! - [`HookMatcher`](crate::HookMatcher) - Pattern matching for selective hook triggering
-//! - [`HookCallback`] - Trait for implementing hook logic
-//! - [`HookInput`] - Data passed to hooks
-//! - [`HookContext`] - Session context available to hooks
-//! - [`HookResponse`] - Response with permission decisions
+//! - `HookEvent` - Events that trigger hooks (defined in options module)
+//! - `HookMatcher` - Pattern matching for selective hook triggering
+//! - `HookCallback` - Trait for implementing hook logic
+//! - `HookInput` - Data passed to hooks
+//! - `HookContext` - Session context available to hooks
+//! - `HookResponse` - Response with permission decisions
 //!
 //! # Examples
 //!

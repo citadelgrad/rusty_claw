@@ -1,6 +1,6 @@
 //! Configuration options and builder pattern for Claude agent sessions
 //!
-//! This module provides [`ClaudeAgentOptions`] for configuring Claude agent behavior,
+//! This module provides `ClaudeAgentOptions` for configuring Claude agent behavior,
 //! including prompt settings, tools, permissions, session management, and environment.
 //!
 //! # Example

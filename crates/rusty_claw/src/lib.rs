@@ -70,7 +70,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! // Coming soon: example of creating a simple agent
 //! ```
 //!
@@ -88,13 +88,13 @@ pub use rusty_claw_macros::*;
 
 /// Low-level transport layer for JSONL communication over stdio
 ///
-/// This module provides the [Transport](crate::transport::Transport) trait, which defines an async interface for
+/// This module provides the `Transport` trait, which defines an async interface for
 /// bidirectional JSONL message exchange with the Claude Code CLI over stdin/stdout.
 ///
-/// [SubprocessCLITransport](crate::transport::SubprocessCLITransport) is the default implementation that spawns the `claude` CLI
+/// `SubprocessCLITransport` is the default implementation that spawns the `claude` CLI
 /// as a subprocess and manages its lifecycle.
 ///
-/// The [Transport](crate::transport::Transport) trait can be implemented for custom transports (e.g., remote connections,
+/// The `Transport` trait can be implemented for custom transports (e.g., remote connections,
 /// testing mock transports, alternative CLIs).
 pub mod transport;
 
@@ -108,7 +108,7 @@ pub mod control;
 /// Model Context Protocol (MCP) integration
 ///
 /// This module provides the integration layer for MCP tools, allowing agents to expose
-/// custom tools to the Claude CLI. See [SdkMcpServerImpl](crate::mcp_server::SdkMcpServerImpl) for the main server implementation.
+/// custom tools to the Claude CLI. See `SdkMcpServerImpl` for the main server implementation.
 pub mod mcp_server;
 
 /// Hook system for lifecycle events
@@ -117,71 +117,71 @@ pub mod mcp_server;
 /// tool invocations, permission requests, and subagent operations.
 ///
 /// Key types:
-/// - [HookEvent](crate::options::HookEvent) - Events that trigger hooks (defined in options module)
-/// - [HookMatcher](crate::options::HookMatcher) - Pattern matching for selective hook triggering (defined in options module)
-/// - [HookCallback](crate::hooks::HookCallback) - Trait for implementing hook logic
-/// - [HookInput](crate::hooks::HookInput) - Data passed to hooks
-/// - [HookContext](crate::hooks::HookContext) - Session context available to hooks
-/// - [HookResponse](crate::hooks::HookResponse) - Response with permission decisions
+/// - `HookEvent` - Events that trigger hooks (defined in options module)
+/// - `HookMatcher` - Pattern matching for selective hook triggering (defined in options module)
+/// - `HookCallback` - Trait for implementing hook logic
+/// - `HookInput` - Data passed to hooks
+/// - `HookContext` - Session context available to hooks
+/// - `HookResponse` - Response with permission decisions
 pub mod hooks;
 
 /// Permission management for tool usage control
 ///
 /// This module provides permission handlers for controlling tool access and usage
-/// in Claude agents. See [DefaultPermissionHandler](crate::permissions::DefaultPermissionHandler) for the default implementation.
+/// in Claude agents. See `DefaultPermissionHandler` for the default implementation.
 pub mod permissions;
 
 /// Error types and utilities
 ///
-/// This module defines the [ClawError](crate::error::ClawError) enum, which covers all error cases in the SDK:
+/// This module defines the `ClawError` enum, which covers all error cases in the SDK:
 ///
-/// - [ClawError::CliNotFound](crate::error::ClawError::CliNotFound) - Claude Code CLI binary not found during discovery
-/// - [ClawError::InvalidCliVersion](crate::error::ClawError::InvalidCliVersion) - CLI version is older than required (< 2.0.0)
-/// - [ClawError::Connection](crate::error::ClawError::Connection) - Transport connection failures
-/// - [ClawError::Process](crate::error::ClawError::Process) - CLI process crashes or non-zero exits
-/// - [ClawError::JsonDecode](crate::error::ClawError::JsonDecode) - JSONL parsing errors (auto-converts from `serde_json::Error`)
-/// - [ClawError::MessageParse](crate::error::ClawError::MessageParse) - Malformed control protocol messages
-/// - [ClawError::ControlTimeout](crate::error::ClawError::ControlTimeout) - Control protocol request timeouts
-/// - [ClawError::ControlError](crate::error::ClawError::ControlError) - Control protocol semantic errors
-/// - [ClawError::Io](crate::error::ClawError::Io) - Filesystem and I/O operations (auto-converts from `std::io::Error`)
-/// - [ClawError::ToolExecution](crate::error::ClawError::ToolExecution) - MCP tool handler failures
+/// - `CliNotFound` - Claude Code CLI binary not found during discovery
+/// - `InvalidCliVersion` - CLI version is older than required (< 2.0.0)
+/// - `Connection` - Transport connection failures
+/// - `Process` - CLI process crashes or non-zero exits
+/// - `JsonDecode` - JSONL parsing errors (auto-converts from `serde_json::Error`)
+/// - `MessageParse` - Malformed control protocol messages
+/// - `ControlTimeout` - Control protocol request timeouts
+/// - `ControlError` - Control protocol semantic errors
+/// - `Io` - Filesystem and I/O operations (auto-converts from `std::io::Error`)
+/// - `ToolExecution` - MCP tool handler failures
 pub mod error;
 
 /// Message types and structures
 ///
 /// This module defines all message types that flow between the agent and Claude CLI.
 ///
-/// The primary [Message](crate::messages::Message) enum represents all possible messages from the CLI:
+/// The primary `Message` enum represents all possible messages from the CLI:
 ///
-/// - [Message::System](crate::messages::Message::System) - System lifecycle events (init, compact boundary)
-/// - [Message::Assistant](crate::messages::Message::Assistant) - Assistant responses with content blocks
-/// - [Message::User](crate::messages::Message::User) - User input messages
-/// - [Message::Result](crate::messages::Message::Result) - Final results (success, error, input required)
+/// - `System` - System lifecycle events (init, compact boundary)
+/// - `Assistant` - Assistant responses with content blocks
+/// - `User` - User input messages
+/// - `Result` - Final results (success, error, input required)
 ///
-/// Assistant messages contain [ContentBlock](crate::messages::ContentBlock) items:
+/// Assistant messages contain `ContentBlock` items:
 ///
-/// - [ContentBlock::Text](crate::messages::ContentBlock::Text) - Plain text content
-/// - [ContentBlock::ToolUse](crate::messages::ContentBlock::ToolUse) - Tool invocation requests
-/// - [ContentBlock::ToolResult](crate::messages::ContentBlock::ToolResult) - Tool execution results
-/// - [ContentBlock::Thinking](crate::messages::ContentBlock::Thinking) - Extended thinking tokens
+/// - `Text` - Plain text content
+/// - `ToolUse` - Tool invocation requests
+/// - `ToolResult` - Tool execution results
+/// - `Thinking` - Extended thinking tokens
 pub mod messages;
 
 /// Simple query API for one-shot Claude interactions
 ///
-/// This module provides the [query()](crate::query::query) function for simple, one-shot queries to Claude
+/// This module provides the `query()` function for simple, one-shot queries to Claude
 /// without managing a persistent client connection.
 pub mod query;
 
 /// Configuration options and builder
 ///
-/// This module provides [ClaudeAgentOptions](crate::options::ClaudeAgentOptions) for configuring Claude agent behavior,
+/// This module provides `ClaudeAgentOptions` for configuring Claude agent behavior,
 /// including model selection, permission modes, hook configurations, and agent definitions.
 pub mod options;
 
 /// Client for interactive sessions with Claude CLI
 ///
-/// This module provides [ClaudeClient](crate::client::ClaudeClient), a persistent client for multi-turn
-/// conversations with the Claude Code CLI. Unlike the one-shot [query()](crate::query::query) API, [ClaudeClient](crate::client::ClaudeClient)
+/// This module provides `ClaudeClient`, a persistent client for multi-turn
+/// conversations with the Claude Code CLI. Unlike the one-shot `query()` API, `ClaudeClient`
 /// maintains state across multiple messages and supports control operations like model switching
 /// and session interruption.
 pub mod client;

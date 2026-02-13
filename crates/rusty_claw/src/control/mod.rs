@@ -188,7 +188,7 @@ impl ControlProtocol {
     /// Initialize the agent session
     ///
     /// Sends an `initialize` control request to the CLI with configuration
-    /// from [`ClaudeAgentOptions`]. This must be called before the CLI can
+    /// from `ClaudeAgentOptions`. This must be called before the CLI can
     /// process user messages.
     ///
     /// # Arguments

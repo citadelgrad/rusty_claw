@@ -84,7 +84,7 @@ where
 /// # Arguments
 ///
 /// * `prompt` - The prompt string to send to Claude
-/// * `options` - Optional configuration using [`ClaudeAgentOptions`]
+/// * `options` - Optional configuration using `ClaudeAgentOptions`
 ///
 /// # Returns
 ///
