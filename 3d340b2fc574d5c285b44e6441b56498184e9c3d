@@ -1,0 +1,59 @@
+.attractor/investigation.md
+  627caeaaa26e7c1d 1,3,5,12,14-18,20-30,34,36,38-41,43-48,52,54-56,58,60,62-63,65-71,75,77,79,81,83-86,89-93,95,97-114,117-121,125,127,129,131-132,134-135,137-138,140-142,144,146-150,153,155-158,160,162-179,183-186,188-190,192-195,199,201,203,205-208,211-212,215,217,219,221-227,229-241,243-245,247-250,252-254,256-257,259-264,266-271,275,277,279-291,293-297,299-302,304-323,325-327,329,331-336,338-341,343-345,347-349,353,355,357,359,361-422,424-426,428,430-435,439,441,443,445-450,452,454-459,463,465,467,469-472,474-480,482,485-489,493,495,497,499-502,504-510,512,515-519,523,525,528-529,531,534,536-537,541,543,545-551,553,555,561,564-568,570,573-577,583-590,594,596,598-601,603-608,610,612-638,640,642,644-650,652,659
+crates/rusty_claw/examples/interactive_client.rs
+  b6ad0710cdd78eb7 1-166
+crates/rusty_claw/examples/hooks_guardrails.rs
+  b6ad0710cdd78eb7 1-292
+.attractor/current_task.md
+  02bfe317d04bd245 1,4,10,16,20,33-47
+crates/rusty_claw/examples/simple_query.rs
+  b6ad0710cdd78eb7 1-96
+crates/rusty_claw/examples/custom_tool.rs
+  b6ad0710cdd78eb7 1-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "3d340b2fc574d5c285b44e6441b56498184e9c3d",
+  "prompts": {
+    "02bfe317d04bd245": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "833a712f-572d-445e-b3c0-aecdd1e99861",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 4,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "627caeaaa26e7c1d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e2827f84-8edf-4271-b0f1-adf5d39dccb9",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 498,
+      "total_deletions": 353,
+      "accepted_lines": 497,
+      "overriden_lines": 0
+    },
+    "b6ad0710cdd78eb7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a02aec73-f165-4958-843b-64c623583439",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 735,
+      "total_deletions": 25,
+      "accepted_lines": 710,
+      "overriden_lines": 0
+    }
+  }
+}
