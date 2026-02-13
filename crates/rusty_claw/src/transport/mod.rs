@@ -6,6 +6,7 @@
 //! # Overview
 //!
 //! The transport layer handles:
+//! - CLI discovery and version validation
 //! - Process lifecycle management (spawning, monitoring, shutdown)
 //! - Bidirectional communication (stdin writes, stdout reads)
 //! - NDJSON message framing and parsing
@@ -26,12 +27,13 @@
 //! ```ignore
 //! use rusty_claw::transport::{Transport, SubprocessCLITransport};
 //!
+//! // Create transport with automatic CLI discovery
 //! let mut transport = SubprocessCLITransport::new(
-//!     PathBuf::from("claude"),
+//!     None, // Will auto-discover 'claude' in PATH
 //!     vec!["--output-format=stream-json".to_string()]
 //! );
 //!
-//! // Establish connection
+//! // Establish connection (discovers and validates CLI version)
 //! transport.connect().await?;
 //!
 //! // Get message receiver
@@ -59,8 +61,10 @@ use tokio::sync::mpsc;
 use crate::error::ClawError;
 
 mod subprocess;
+mod discovery;
 
 pub use subprocess::SubprocessCLITransport;
+pub use discovery::CliDiscovery;
 
 /// Abstract transport for communicating with Claude Code CLI.
 ///

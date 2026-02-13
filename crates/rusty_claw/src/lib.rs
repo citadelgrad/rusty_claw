@@ -75,5 +75,5 @@ pub mod prelude {
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
-    pub use crate::transport::{SubprocessCLITransport, Transport};
+    pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }

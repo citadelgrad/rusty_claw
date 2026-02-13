@@ -1,346 +1,304 @@
-# Investigation: rusty_claw-6cn - Implement Transport trait and SubprocessCLITransport
+# Investigation: rusty_claw-k71 - Implement CLI discovery and version check
 
-**Task ID:** rusty_claw-6cn
-**Priority:** P1 (Critical)
+**Task ID:** rusty_claw-k71
+**Priority:** P2
 **Status:** IN_PROGRESS
 **Date:** 2026-02-13
 
 ## Overview
 
-This task implements the Transport abstraction layer that enables communication between the SDK and the Claude Code CLI. The Transport trait provides an async interface for subprocess management, stdin/stdout communication, and NDJSON message streaming.
+Implement CLI discovery logic to find the `claude` binary in multiple locations and validate that its version is >= 2.0.0. This will integrate with the existing `SubprocessCLITransport` we completed in rusty_claw-6cn.
 
 ## Current State
 
-### Existing Code
-- ✅ **Error hierarchy** - Fully implemented in `crates/rusty_claw/src/error.rs`
-  - `ClawError::CliNotFound` - For CLI discovery failures
-  - `ClawError::Connection` - For transport connection failures
-  - `ClawError::Process` - For CLI crashes with exit codes and stderr
-  - `ClawError::JsonDecode` - For NDJSON parsing failures (auto-converts from serde_json::Error)
-  - `ClawError::Io` - For I/O operations (auto-converts from std::io::Error)
+### ✅ What Exists
+1. **Transport Implementation** (rusty_claw-6cn completed)
+   - `SubprocessCLITransport` in `crates/rusty_claw/src/transport/subprocess.rs`
+   - Currently takes `cli_path: PathBuf` in constructor (line 100)
+   - No CLI discovery - relies on caller providing valid path
+   - No version validation
 
-- ✅ **Message types** - Fully implemented in `crates/rusty_claw/src/messages.rs`
-  - `Message` enum (System, Assistant, User, Result)
-  - `ContentBlock` enum (Text, ToolUse, ToolResult, Thinking)
-  - `SystemMessage`, `ResultMessage` - Tagged enums
-  - Supporting structs: `ApiMessage`, `UsageInfo`, `ToolInfo`, `McpServerInfo`, `StreamEvent`
+2. **Error Hierarchy** (rusty_claw-9pf completed)
+   - `ClawError::CliNotFound` exists (line 52 in error.rs)
+   - ❌ Missing: `ClawError::InvalidCliVersion` variant
 
-- ✅ **Dependencies available**
-  - `tokio = { version = "1.35", features = ["full"] }` - Process management, async I/O, channels
-  - `tokio-stream = "0.1"` - Stream utilities
-  - `serde_json = "1"` - JSON parsing
-  - `async-trait = "0.1"` - Async trait support for dyn dispatch
-  - `tracing = "0.1"` - Logging
+3. **Dependencies Available**
+   - tokio (async runtime)
+   - std::process::Command (for running `claude --version`)
+   - std::path::PathBuf
+   - std::env (for environment variables)
 
-### Missing Implementation
-- ❌ **Transport module** - Does not exist
-  - `lib.rs:44-46` defines placeholder `pub mod transport` but no actual code
-  - Need to create `crates/rusty_claw/src/transport/mod.rs`
-  - Need to create `crates/rusty_claw/src/transport/subprocess.rs`
+4. **CLI Verification**
+   - Confirmed `claude` is in PATH: `/opt/homebrew/bin/claude`, `/Users/scott/.local/bin/claude`
+   - Confirmed `claude --version` works: outputs `"2.1.39 (Claude Code)"`
+   - Version format: `<semver> (Claude Code)`
 
-## Requirements Analysis
+### ❌ What's Missing
+1. **CliDiscovery struct** - Not implemented
+2. **InvalidCliVersion error** - Not in ClawError enum
+3. **semver dependency** - Not in Cargo.toml (need for version parsing)
+4. **Integration with SubprocessCLITransport** - Constructor doesn't call CliDiscovery
 
-### 1. Transport Trait (SPEC.md:105-135)
+## Implementation Plan
 
-**Location:** `crates/rusty_claw/src/transport/mod.rs`
+### Phase 1: Add Error Variant (5 min)
+**File:** `crates/rusty_claw/src/error.rs`
 
+Add new error variant:
 ```rust
-#[async_trait]
-pub trait Transport: Send + Sync {
-    async fn connect(&mut self) -> Result<(), ClawError>;
-    async fn write(&self, message: &[u8]) -> Result<(), ClawError>;
-    fn messages(&self) -> mpsc::UnboundedReceiver<Result<serde_json::Value, ClawError>>;
-    async fn end_input(&self) -> Result<(), ClawError>;
-    async fn close(&mut self) -> Result<(), ClawError>;
-    fn is_ready(&self) -> bool;
+#[error("Invalid Claude CLI version: expected >= 2.0.0, found {version}")]
+InvalidCliVersion { version: String },
+```
+
+**Location:** After `CliNotFound` (around line 53)
+
+**Tests to add:**
+- `test_invalid_cli_version_message()` - Verify error message formatting
+
+### Phase 2: Add semver Dependency (2 min)
+**File:** `Cargo.toml` (workspace root)
+
+Add to `[workspace.dependencies]`:
+```toml
+semver = "1.0"
+```
+
+**File:** `crates/rusty_claw/Cargo.toml`
+
+Add to `[dependencies]`:
+```toml
+semver = { workspace = true }
+```
+
+### Phase 3: Create CliDiscovery Module (30 min)
+**File:** `crates/rusty_claw/src/transport/discovery.rs` (NEW)
+
+#### 3.1 Struct Definition
+```rust
+pub struct CliDiscovery;
+
+impl CliDiscovery {
+    pub async fn find(cli_path: Option<&Path>) -> Result<PathBuf, ClawError>
+    pub async fn validate_version(cli: &Path) -> Result<String, ClawError>
 }
 ```
 
-**Key characteristics:**
-- Async methods for I/O operations
-- `Send + Sync` bounds for thread safety
-- Returns `UnboundedReceiver` for message streaming (not `impl Stream`)
-- Uses `serde_json::Value` for raw message parsing (typed parsing happens at higher layers)
-- `connect()` and `close()` take `&mut self` (state changes)
-- `write()` and `is_ready()` take `&self` (concurrent access)
+#### 3.2 Search Strategy (find method)
+Search in order (stop at first success):
+1. **Explicit cli_path argument** - If provided, check if exists
+2. **CLAUDE_CLI_PATH env var** - Check `std::env::var("CLAUDE_CLI_PATH")`
+3. **PATH search** - Use `which::which("claude")` (need `which` crate)
+4. **Common locations** - Hardcoded paths:
+   - `/opt/homebrew/bin/claude` (macOS Homebrew)
+   - `/usr/local/bin/claude` (Manual install)
+   - `~/.local/bin/claude` (User install)
+   - `~/.npm/bin/claude` (npm global install)
+   - `~/.claude/local/claude` (Claude Code self-install)
 
-### 2. SubprocessCLITransport (SPEC.md:137-158)
+**Error:** Return `ClawError::CliNotFound` if all searches fail
 
-**Location:** `crates/rusty_claw/src/transport/subprocess.rs`
+#### 3.3 Version Validation (validate_version method)
+1. Run: `tokio::process::Command::new(cli).arg("--version").output().await`
+2. Parse stdout: Extract version string from `"X.Y.Z (Claude Code)"`
+3. Use `semver::Version::parse()` to parse version
+4. Compare: `version >= Version::new(2, 0, 0)`
+5. Return `Ok(version_string)` or `Err(ClawError::InvalidCliVersion)`
 
-**CLI Invocation:**
-```bash
-claude \
-  --output-format=stream-json \    # NDJSON output
-  --verbose \                       # Include system messages
-  --max-turns={N} \                 # From options
-  --model={model} \                 # From options
-  --permission-mode={mode} \        # From options
-  --input-format=stream-json \      # Enable control protocol
-  --settings-sources="" \           # Isolation: no external settings
-  -p "{prompt}"                     # Initial prompt
+**Errors:**
+- I/O error → `ClawError::Io`
+- Parse failure → `ClawError::InvalidCliVersion`
+- Version < 2.0.0 → `ClawError::InvalidCliVersion`
+
+#### 3.4 Tests to Add
+- `test_find_with_explicit_path()` - Explicit cli_path takes precedence
+- `test_find_with_env_var()` - CLAUDE_CLI_PATH env var works
+- `test_find_in_path()` - Searches PATH correctly
+- `test_find_not_found()` - Returns CliNotFound when missing
+- `test_validate_version_valid()` - Version >= 2.0.0 passes
+- `test_validate_version_invalid()` - Version < 2.0.0 fails
+- `test_validate_version_parse_error()` - Malformed output fails
+
+### Phase 4: Integrate with SubprocessCLITransport (15 min)
+**File:** `crates/rusty_claw/src/transport/subprocess.rs`
+
+#### 4.1 Update Constructor
+**Current (line 100-110):**
+```rust
+pub fn new(cli_path: PathBuf, args: Vec<String>) -> Self
 ```
 
-**Implementation requirements:**
-
-1. **Process Management**
-   - Use `tokio::process::Command` with piped stdin/stdout/stderr
-   - Store `Child` handle for lifecycle management
-   - Capture stderr for error diagnostics
-
-2. **Message Streaming** (SPEC.md:159-170)
-   - Spawn background `tokio::task` to read stdout line-by-line
-   - Parse each line as `serde_json::Value`
-   - Send parsed messages through `mpsc::unbounded_channel`
-   - Send `ClawError::JsonDecode` for malformed JSON
-
-3. **Stdin Writing**
-   - Store `ChildStdin` handle (wrapped in `Arc<Mutex<>>` for concurrent access)
-   - Write raw bytes to stdin
-   - Handle write errors → `ClawError::Io`
-
-4. **Process Lifecycle** (SPEC.md:817-821)
-   - Graceful shutdown: close stdin, wait for exit
-   - Forced shutdown: SIGTERM → SIGKILL after 5s timeout
-   - Detect unexpected exits: background task monitors process status
-   - Implement via `Drop` trait for cleanup
-
-5. **State Tracking**
-   - Track connection state (connected/disconnected)
-   - `is_ready()` checks if process is alive and connected
-
-### 3. NDJSON Framing (SPEC.md:159-170)
-
-**Message format:**
-```
-{"type":"system","subtype":"init","session_id":"abc123",...}\n
-{"type":"assistant","message":{"role":"assistant","content":[...]},...}\n
-{"type":"result","subtype":"success","result":"...",...}\n
+**New signature:**
+```rust
+pub fn new(cli_path: Option<PathBuf>, args: Vec<String>) -> Self
 ```
 
-**Parsing strategy:**
-- Read stdout line-by-line using `BufReader::lines()`
-- Parse each line with `serde_json::from_str::<Value>(line)`
-- Do NOT parse into typed `Message` here (that's protocol layer's job)
-- Send `Result<Value, ClawError>` through channel
+**Store both:**
+```rust
+struct SubprocessCLITransport {
+    /// Optional CLI path (resolved on connect if None)
+    cli_path_arg: Option<PathBuf>,
+    /// Resolved CLI path (set during connect)
+    cli_path: Arc<Mutex<Option<PathBuf>>>,
+    // ... rest of fields
+}
+```
 
-## Files to Create
+#### 4.2 Update connect() Method
+**Current (line 278-336):** Uses `self.cli_path` directly
 
-### 1. `crates/rusty_claw/src/transport/mod.rs`
-**Purpose:** Module root and Transport trait definition
+**New behavior (in connect):**
+1. Resolve CLI path if not set:
+   ```rust
+   let cli_path = if let Some(mut guard) = self.cli_path.lock().await {
+       if guard.is_none() {
+           let discovered = CliDiscovery::find(self.cli_path_arg.as_deref()).await?;
+           *guard = Some(discovered.clone());
+           discovered
+       } else {
+           guard.as_ref().unwrap().clone()
+       }
+   } else { ... };
+   ```
+2. Call `CliDiscovery::validate_version(&cli_path).await?`
+3. Then spawn subprocess with validated path
 
-**Contents:**
-- Transport trait with all 6 methods
-- Re-export SubprocessCLITransport
-- Module documentation
+**Tests to update:**
+- Update all tests to pass `None` for cli_path (use discovery)
+- Add `test_connect_validates_version()` - Ensures version check happens
+- Update `test_connect_with_invalid_cli()` to use explicit bad path
 
-**Size estimate:** ~80 lines (trait + docs)
+### Phase 5: Export and Document (5 min)
+**File:** `crates/rusty_claw/src/transport/mod.rs`
 
-### 2. `crates/rusty_claw/src/transport/subprocess.rs`
-**Purpose:** SubprocessCLITransport implementation
+Add module:
+```rust
+mod discovery;
+pub use discovery::CliDiscovery;
+```
 
-**Contents:**
-- `SubprocessCLITransport` struct with fields:
-  - `child: Option<Child>` - Process handle
-  - `stdin: Arc<Mutex<Option<ChildStdin>>>` - Stdin writer
-  - `messages_rx: Option<UnboundedReceiver<...>>` - Message receiver
-  - `connected: Arc<AtomicBool>` - Connection state
-  - `cli_path: PathBuf` - Path to claude CLI
-  - `args: Vec<String>` - CLI arguments
-
-- Constructor: `pub fn new(cli_path: PathBuf, args: Vec<String>) -> Self`
-- Transport trait implementation
-- `Drop` implementation for cleanup
-- Helper methods:
-  - `spawn_reader_task()` - Background stdout reader
-  - `graceful_shutdown()` - SIGTERM → wait → SIGKILL
-
-**Size estimate:** ~300-400 lines (struct + impl + Drop + helpers + tests)
-
-### 3. `crates/rusty_claw/src/lib.rs` (modify)
-**Changes:**
-- Remove placeholder `pub mod transport {}` (lines 44-46)
-- Add: `pub mod transport;`
-- Add Transport trait to prelude: `pub use crate::transport::Transport;`
-
-## Implementation Strategy
-
-### Phase 1: Transport Trait (30 min)
-1. Create `crates/rusty_claw/src/transport/mod.rs`
-2. Define Transport trait with all method signatures
-3. Add comprehensive documentation
-4. Export from lib.rs
-
-### Phase 2: SubprocessCLITransport Structure (45 min)
-1. Create `crates/rusty_claw/src/transport/subprocess.rs`
-2. Define struct with all fields
-3. Implement constructor
-4. Implement `is_ready()`
-
-### Phase 3: Process Spawning (45 min)
-1. Implement `connect()` method:
-   - Create `tokio::process::Command`
-   - Set up stdin/stdout/stderr pipes
-   - Spawn process
-   - Store handles
-
-### Phase 4: Message Streaming (60 min)
-1. Implement `messages()` method:
-   - Create `mpsc::unbounded_channel`
-   - Spawn background task to read stdout
-   - Parse NDJSON line-by-line
-   - Send messages through channel
-2. Handle parse errors gracefully
-
-### Phase 5: Stdin Writing (30 min)
-1. Implement `write()` method:
-   - Lock stdin mutex
-   - Write bytes
-   - Handle errors
-
-### Phase 6: Process Lifecycle (60 min)
-1. Implement `end_input()` - Close stdin
-2. Implement `close()` - Graceful shutdown
-3. Implement `Drop` - Forced cleanup
-4. Add process monitoring task
-
-### Phase 7: Testing (60 min)
-1. Unit tests for Transport trait interface
-2. Integration tests with mock CLI
-3. Process lifecycle tests
-4. Error handling tests
-5. NDJSON parsing tests
-
-**Total estimate:** ~5-6 hours
+Update module docs to mention CLI discovery
 
 ## Dependencies
 
-### Satisfied
-- ✅ **rusty_claw-9pf** (Define error hierarchy) - CLOSED
-  - All error variants available
-  - Auto-conversion from `std::io::Error` and `serde_json::Error`
+### ✅ Satisfied
+- rusty_claw-9pf (error hierarchy) - COMPLETED
 
-### Blocks
-- ⚠️ **rusty_claw-91n** (Implement Control Protocol handler) - P1
-  - Needs Transport trait for control protocol layer
-- ⚠️ **rusty_claw-sna** (Implement query() function) - P1
-  - Needs Transport for message streaming
+### ⚠️ New Dependencies Required
+- `semver = "1.0"` - For semantic version parsing
+- `which = "6.0"` (OPTIONAL) - For PATH search (can use manual implementation if desired)
 
-## Risks & Challenges
+## Risks & Considerations
 
-### 1. Process Lifecycle Management ⚠️ MEDIUM RISK
-**Issue:** Ensuring clean shutdown without orphaned processes or deadlocks
+### 🟡 Medium Risk: PATH Search Implementation
+**Issue:** Need to search PATH environment variable for `claude` binary
 
-**Challenges:**
-- Coordinating stdin close + stdout reader task + process wait
-- Handling SIGTERM → SIGKILL escalation
-- Detecting unexpected process exits
-- Avoiding race conditions between `Drop` and explicit `close()`
+**Options:**
+1. Use `which` crate (simplest, adds dependency)
+2. Manual implementation:
+   ```rust
+   std::env::var("PATH")
+       .split(':')
+       .map(|dir| Path::new(dir).join("claude"))
+       .find(|path| path.exists())
+   ```
+
+**Recommendation:** Use `which` crate - it's battle-tested and handles platform differences
+
+### 🟢 Low Risk: Home Directory Expansion
+**Issue:** Common locations like `~/.local/bin/claude` need tilde expansion
+
+**Solution:**
+```rust
+use std::env;
+let home = env::var("HOME").unwrap_or_default();
+let path = PathBuf::from(home).join(".local/bin/claude");
+```
+
+**Alternative:** Use `dirs` crate for cross-platform home dir
+
+### 🟢 Low Risk: Version String Parsing
+**Issue:** Version format is `"X.Y.Z (Claude Code)"`, need to extract X.Y.Z
+
+**Solution:**
+```rust
+let output = String::from_utf8_lossy(&output.stdout);
+let version_str = output
+    .split_whitespace()
+    .next()
+    .ok_or(ClawError::InvalidCliVersion { version: output.to_string() })?;
+semver::Version::parse(version_str)?
+```
+
+### 🟢 Low Risk: Backwards Compatibility
+**Issue:** Changing `SubprocessCLITransport::new()` signature from required to optional PathBuf
+
+**Impact:**
+- Breaking change for existing code
+- Tests need updates
 
 **Mitigation:**
-- Use `Arc<AtomicBool>` for connection state (lock-free)
-- Background monitoring task detects unexpected exits
-- `Drop` implementation uses non-blocking cleanup
-- Timeout-based SIGKILL escalation (5s)
-
-### 2. Message Channel Design ⚠️ MEDIUM RISK
-**Issue:** `messages()` returns owned `UnboundedReceiver`, but Transport trait requires `&self`
-
-**Challenges:**
-- Can't move receiver out on each call
-- Need to create receiver during `connect()`, return on first `messages()` call
-- Subsequent calls should return error or panic
-
-**Mitigation:**
-- Store `Option<UnboundedReceiver>` in struct
-- `messages()` uses `Option::take()` to move receiver out
-- Document that `messages()` can only be called once
-- Alternative: Return `mpsc::UnboundedSender` and clone receiver (more flexible)
-
-### 3. Concurrent stdin access ⚠️ LOW RISK
-**Issue:** Multiple tasks may call `write()` concurrently
-
-**Mitigation:**
-- Wrap `ChildStdin` in `Arc<Mutex<Option<ChildStdin>>>`
-- Lock before each write
-- Handle write errors properly
-
-### 4. stderr capture ⚠️ LOW RISK
-**Issue:** Need to capture stderr for error reporting but not block on it
-
-**Mitigation:**
-- Spawn separate task to read stderr
-- Store in `Arc<Mutex<String>>` or channel
-- Include in `ClawError::Process` on failure
-
-## Testing Strategy
-
-### Unit Tests
-1. **Transport trait interface**
-   - Verify all methods are callable
-   - Check Send + Sync bounds
-
-2. **SubprocessCLITransport construction**
-   - Valid CLI path
-   - Invalid CLI path → connection error
-
-3. **NDJSON parsing**
-   - Valid JSON lines → Ok(Value)
-   - Invalid JSON → ClawError::JsonDecode
-   - Empty lines → skip
-   - Partial lines → buffer until complete
-
-### Integration Tests
-1. **Mock CLI process**
-   - Use test binary that outputs known NDJSON
-   - Verify messages are received
-   - Verify stdin is written correctly
-
-2. **Process lifecycle**
-   - Normal shutdown (close stdin → process exits)
-   - Forced shutdown (SIGTERM → SIGKILL)
-   - Unexpected exit detection
-
-3. **Error handling**
-   - Process crashes → ClawError::Process with stderr
-   - Write to closed stdin → ClawError::Io
-   - Read from closed stdout → channel closes
-
-### Property Tests (future)
-- Concurrent writes don't corrupt stdin
-- All spawned tasks are cleaned up
-- No resource leaks
+- We're at 0.1.0 (pre-release), breaking changes are acceptable
+- Update all tests in same commit
+- Clear migration notes in CHANGELOG
 
 ## Success Criteria
 
-- ✅ Transport trait fully defined with all 6 methods
-- ✅ SubprocessCLITransport compiles and implements Transport
-- ✅ Process spawning works with correct CLI args
-- ✅ NDJSON messages stream through channel
-- ✅ stdin writes work correctly
-- ✅ Graceful shutdown (close stdin → wait)
-- ✅ Forced shutdown (SIGTERM → SIGKILL after timeout)
-- ✅ Unexpected exit detection
-- ✅ All unit tests passing
-- ✅ Zero clippy warnings in new code
-- ✅ Comprehensive documentation
+### Code Changes
+- ✅ Add `ClawError::InvalidCliVersion` variant with test
+- ✅ Add `semver` dependency to Cargo.toml
+- ✅ Create `crates/rusty_claw/src/transport/discovery.rs` with CliDiscovery
+- ✅ Export CliDiscovery from `transport/mod.rs`
+- ✅ Update SubprocessCLITransport constructor to take `Option<PathBuf>`
+- ✅ Update SubprocessCLITransport::connect() to call CliDiscovery
 
-## References
+### Test Coverage
+- ✅ Error variant test in error.rs
+- ✅ 7+ tests in discovery.rs covering all search paths
+- ✅ Update existing transport tests for new signature
+- ✅ Add version validation test in subprocess.rs
 
-- **SPEC.md:103-135** - Transport trait specification
-- **SPEC.md:137-158** - SubprocessCLITransport details
-- **SPEC.md:159-170** - NDJSON message framing
-- **SPEC.md:817-821** - Process lifecycle notes
-- **error.rs** - ClawError variants
-- **messages.rs** - Message types (for reference, not used here)
-- **tokio docs** - process::Command, BufReader, channels
+### Quality Gates
+- ✅ All tests pass (including existing 37 tests)
+- ✅ Zero clippy warnings
+- ✅ Documentation complete (discovery module and methods)
+- ✅ SPEC.md compliance (lines 712-729)
 
-## Next Steps
+### Integration
+- ✅ SubprocessCLITransport automatically discovers CLI on connect
+- ✅ Validates version >= 2.0.0 before spawning
+- ✅ Returns clear errors for missing CLI or invalid version
 
-1. Create transport module structure
-2. Define Transport trait
-3. Implement SubprocessCLITransport
-4. Write comprehensive tests
-5. Verify with `cargo check`, `cargo test`, `cargo clippy`
-6. Update `.attractor/implementation-summary.md`
-7. Close task with `bd close rusty_claw-6cn`
+## Next Steps (After Completion)
+
+This task **unblocks**:
+- **rusty_claw-sna** [P1]: Implement query() function
+  - query() will use SubprocessCLITransport
+  - Can now rely on automatic CLI discovery
+
+## Files to Create
+1. `crates/rusty_claw/src/transport/discovery.rs` - New module
+
+## Files to Modify
+1. `crates/rusty_claw/src/error.rs` - Add InvalidCliVersion variant
+2. `Cargo.toml` - Add semver (and optionally which) dependency
+3. `crates/rusty_claw/Cargo.toml` - Add semver dependency
+4. `crates/rusty_claw/src/transport/mod.rs` - Export CliDiscovery
+5. `crates/rusty_claw/src/transport/subprocess.rs` - Integrate CliDiscovery
+
+## Estimated Effort
+- **Total:** ~60 minutes
+- **Breakdown:**
+  - Error variant: 5 min
+  - Dependencies: 2 min
+  - CliDiscovery module: 30 min
+  - SubprocessCLITransport integration: 15 min
+  - Documentation and exports: 5 min
+  - Testing and verification: 10 min (covered by test runs)
+
+## Notes
+
+- The `claude --version` output format is stable: `"2.1.39 (Claude Code)"`
+- We can assume this format won't change in 2.x versions
+- If format changes, version parsing will fail safely with InvalidCliVersion
+- The search order prioritizes explicit configuration over automatic discovery
+- This follows Unix conventions (explicit > env var > PATH > common locations)

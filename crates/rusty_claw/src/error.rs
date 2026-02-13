@@ -6,6 +6,7 @@
 //! # Error Variants
 //!
 //! - [`ClawError::CliNotFound`]: Claude Code CLI binary not found during discovery
+//! - [`ClawError::InvalidCliVersion`]: CLI version is older than required (< 2.0.0)
 //! - [`ClawError::Connection`]: Transport connection failures
 //! - [`ClawError::Process`]: CLI process crashes or non-zero exits
 //! - [`ClawError::JsonDecode`]: JSONL parsing errors (auto-converts from `serde_json::Error`)
@@ -51,6 +52,20 @@ pub enum ClawError {
     /// - Or specify the CLI path explicitly when creating the transport
     #[error("Claude Code CLI not found. Install it or set cli_path.")]
     CliNotFound,
+
+    /// Claude Code CLI version is incompatible
+    ///
+    /// This error occurs when the installed CLI version is older than the
+    /// minimum required version (2.0.0).
+    ///
+    /// # Resolution
+    /// - Upgrade Claude Code CLI: `npm update -g @anthropic-ai/claude-code`
+    /// - Or install the latest version: `npm install -g @anthropic-ai/claude-code@latest`
+    #[error("Invalid Claude CLI version: expected >= 2.0.0, found {version}")]
+    InvalidCliVersion {
+        /// The actual version string found (e.g., "1.5.2")
+        version: String,
+    },
 
     /// Failed to establish connection to Claude Code CLI
     ///
@@ -130,6 +145,17 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Claude Code CLI not found. Install it or set cli_path."
+        );
+    }
+
+    #[test]
+    fn test_invalid_cli_version_message() {
+        let err = ClawError::InvalidCliVersion {
+            version: "1.5.2".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "Invalid Claude CLI version: expected >= 2.0.0, found 1.5.2"
         );
     }
 

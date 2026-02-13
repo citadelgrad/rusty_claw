@@ -1,65 +1,69 @@
-# Current Task: rusty_claw-6cn
+# Current Task: rusty_claw-k71
 
+**Task ID:** rusty_claw-k71
 **Status:** IN_PROGRESS
-**Priority:** P1 (Critical)
+**Priority:** P2
 **Type:** Task
 **Owner:** Scott Nixon
 
 ## Title
-Implement Transport trait and SubprocessCLITransport
+Implement CLI discovery and version check
 
 ## Description
-Define async Transport trait (connect, write, messages, end_input, close, is_ready). Implement SubprocessCLITransport that spawns claude CLI with correct args, reads NDJSON from stdout, and handles process lifecycle (SIGTERM/SIGKILL).
+Implement CliDiscovery with find() searching cli_path, CLAUDE_CLI_PATH env, PATH, and common install locations. Add validate_version() to ensure CLI >= 2.0.0 via semver parsing.
 
 ## Dependencies
 - ✅ Depends on: rusty_claw-9pf (Define error hierarchy) - COMPLETED
 
 ## Blocks
-- ○ rusty_claw-91n (Implement Control Protocol handler) - P1
 - ○ rusty_claw-sna (Implement query() function) - P1
 
 ## Key Requirements
-1. Define async Transport trait with methods:
-   - connect() → establish subprocess connection
-   - write() → write to stdin
-   - messages() → async stream of NDJSON messages from stdout
-   - end_input() → close stdin gracefully
-   - close() → terminate subprocess
-   - is_ready() → check if transport is connected
 
-2. Implement SubprocessCLITransport:
-   - Spawn "claude" CLI subprocess with correct args
-   - Read NDJSON messages from stdout in real-time
-   - Handle process lifecycle (SIGTERM/SIGKILL)
-   - Proper error handling and cleanup
+1. **CliDiscovery struct with find() method:**
+   - Takes optional cli_path argument
+   - Searches in order: cli_path → CLAUDE_CLI_PATH env → PATH → common locations
+   - Returns Result<PathBuf, ClawError::CliNotFound>
 
-3. Message Handling:
-   - Parse NDJSON output from Claude CLI
-   - Convert to Message types (from messages.rs)
-   - Stream messages as they arrive
+2. **validate_version() function:**
+   - Executes CLI with --version flag
+   - Parses semantic version string
+   - Ensures version >= 2.0.0
+   - Returns Result<(), ClawError::InvalidCliVersion>
+
+3. **Common locations to search:**
+   - /opt/homebrew/bin/claude (macOS)
+   - /usr/local/bin/claude
+   - ~/.local/bin/claude
+   - /usr/bin/claude
+
+4. **Integration with SubprocessCLITransport:**
+   - Use CliDiscovery::find() in transport constructor
+   - Call validate_version() on connect
 
 ## Files to Create/Modify
-- Create: `crates/rusty_claw/src/transport.rs` - Transport trait and SubprocessCLITransport impl
-- Modify: `crates/rusty_claw/src/lib.rs` - Export transport module
+- Create/Modify: `crates/rusty_claw/src/transport/discovery.rs` - CliDiscovery implementation
+- Modify: `crates/rusty_claw/src/transport/mod.rs` - Export discovery module
+- Modify: `crates/rusty_claw/src/transport/subprocess.rs` - Integrate CliDiscovery
 
 ## Reference
-- SPEC.md: Transport trait specification
-- docs/ARCHITECTURE.md: Transport layer design
-- Message types: `crates/rusty_claw/src/messages.rs`
+- SPEC.md: CLI discovery specification
 - Error hierarchy: `crates/rusty_claw/src/error.rs`
+- Existing transport implementation
 
 ## Test Coverage Needed
-- Transport trait interface tests
-- SubprocessCLITransport spawning tests
-- NDJSON parsing tests
-- Process lifecycle management tests
-- Error handling tests
+- CLI discovery in PATH
+- CLI discovery with CLAUDE_CLI_PATH env var
+- CLI discovery with explicit cli_path argument
+- Missing CLI returns CliNotFound error
+- Invalid version returns InvalidCliVersion error
+- Valid version >= 2.0.0 passes validation
 
 ## Success Criteria
-- ✅ Transport trait fully defined with all required methods
-- ✅ SubprocessCLITransport implementation complete
-- ✅ Subprocess spawning and lifecycle management working
-- ✅ NDJSON message parsing from stdout
+- ✅ CliDiscovery struct with find() method
+- ✅ validate_version() function with semver parsing
+- ✅ All search locations checked in correct order
+- ✅ Integration with SubprocessCLITransport
 - ✅ All unit tests passing
-- ✅ Zero clippy warnings in new code
+- ✅ Zero clippy warnings
 - ✅ Documentation complete

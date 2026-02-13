@@ -30,6 +30,7 @@ thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
 async-trait = "0.1"
+semver = "1.0"
 
 # Unix signal handling (only on Unix platforms)
 nix = { version = "0.29", features = ["signal", "process"], default-features = false }
