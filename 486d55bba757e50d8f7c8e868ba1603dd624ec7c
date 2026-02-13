@@ -1,0 +1,44 @@
+crates/rusty_claw/src/lib.rs
+  82b02d7f25868bdb 25-70
+docs/HOOKS.md
+  82b02d7f25868bdb 1-340
+.attractor/test-results.md
+  f42a4687d596a09f 1,3-4,12-17,23,25,27,29,31-53,56-67,69-72,76,78,80,82,84,87,91,93,95,97-100,102-107,109,111,113,115,117,119-122,124-125,127,129,131,133,135-138,140-143,145-148,152,154,156-162,164-168,172,174-178,180-184,188,190-193,195-198,200,202,204-210,214,216,218-221,223,225-228,230,234,236,238-243,245-246,252,254-257,259-263,267,269,271-277,279-284,286-290,292-295,299,301,303-310,314,316-317,322-326,330-334,336,338-341
+crates/rusty_claw/examples/subagent_usage.rs
+  82b02d7f25868bdb 11,14,66,68,75,77
+crates/rusty_claw/tests/integration_test.rs
+  82b02d7f25868bdb 345-575,580,584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "486d55bba757e50d8f7c8e868ba1603dd624ec7c",
+  "prompts": {
+    "82b02d7f25868bdb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f54db33-3739-4726-95bd-3a95c26fba4a",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 980,
+      "total_deletions": 18,
+      "accepted_lines": 972,
+      "overriden_lines": 0
+    },
+    "f42a4687d596a09f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "46e76483-e2a5-4dc8-b107-c5c07705c309",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 231,
+      "total_deletions": 251,
+      "accepted_lines": 231,
+      "overriden_lines": 0
+    }
+  }
+}
