@@ -1,435 +1,546 @@
-# Investigation: rusty_claw-1ke - Add unit tests for message parsing and fixtures
+# Investigation: rusty_claw-dss - Implement ClaudeAgentOptions builder
 
-**Date:** 2026-02-13
-**Task:** rusty_claw-1ke [P2]
-**Status:** Investigation Complete
+**Task ID:** rusty_claw-dss
+**Status:** in_progress
+**Priority:** P2 (Medium)
 
----
+## Summary
 
-## Task Summary
+Implement `ClaudeAgentOptions` struct with builder pattern to provide flexible configuration for Claude agent sessions. This is a foundational configuration type that will enable downstream Control Protocol handler implementation (rusty_claw-91n).
 
-Create test fixtures (NDJSON files) and additional unit tests to verify deserialization of all Message variants and ContentBlock types. This task enhances the existing test suite to provide comprehensive coverage and reusable fixtures.
+## Current State
 
----
+### ✅ Completed Dependencies
+- **rusty_claw-pwc**: All shared types and message structs are complete
+  - `Message`, `SystemMessage`, `AssistantMessage`, `ResultMessage` defined
+  - `ContentBlock`, `ToolInfo`, `McpServerInfo`, `UsageInfo` defined
+  - Message deserialization working correctly
 
-## Current State Analysis
+### 📂 Existing Files
+- `crates/rusty_claw/src/lib.rs` - Public API with module structure
+- `crates/rusty_claw/src/messages.rs` - Complete message type definitions (627 lines)
+- `crates/rusty_claw/src/query.rs` - Uses `Option<()>` as placeholder for options (line 116)
+- `crates/rusty_claw/src/transport/mod.rs` - Transport trait definition
+- `crates/rusty_claw/src/transport/subprocess.rs` - SubprocessCLITransport implementation
+- `crates/rusty_claw/src/error.rs` - ClawError type hierarchy
 
-### Existing Implementation ✅
+### ❌ Missing Files
+- `crates/rusty_claw/src/options.rs` - **NEW FILE NEEDED**
 
-**File:** `crates/rusty_claw/src/messages.rs` (627 lines)
-
-**Current Test Coverage:** 19 tests (all passing)
-- ✅ `test_message_system_init` - SystemMessage::Init deserialization
-- ✅ `test_message_system_compact_boundary` - SystemMessage::CompactBoundary
-- ✅ `test_message_assistant` - AssistantMessage with optional fields
-- ✅ `test_message_user` - UserMessage deserialization
-- ✅ `test_message_result_success` - ResultMessage::Success with all optional fields
-- ✅ `test_message_result_error` - ResultMessage::Error with extra fields
-- ✅ `test_message_result_input_required` - ResultMessage::InputRequired
-- ✅ `test_content_block_text` - ContentBlock::Text
-- ✅ `test_content_block_tool_use` - ContentBlock::ToolUse
-- ✅ `test_content_block_tool_result` - ContentBlock::ToolResult with is_error
-- ✅ `test_content_block_tool_result_default_is_error` - Default is_error=false
-- ✅ `test_content_block_thinking` - ContentBlock::Thinking
-- ✅ `test_stream_event` - StreamEvent deserialization
-- ✅ `test_usage_info` - UsageInfo struct
-- ✅ `test_tool_info_minimal` - ToolInfo with minimal fields
-- ✅ `test_tool_info_full` - ToolInfo with all optional fields
-- ✅ `test_mcp_server_info` - McpServerInfo with flattened extra
-- ✅ `test_optional_fields_default` - Optional fields default correctly
-- ✅ `test_json_round_trip_complex` - Complex message with multiple content blocks
-
-**Analysis:**
-- All Message variants have test coverage ✅
-- All ContentBlock types have test coverage ✅
-- Optional fields tested ✅
-- Round-trip serialization tested ✅
-- **Gap:** No standalone NDJSON fixture files for reuse
-- **Gap:** No tests loading fixtures from files
-- **Gap:** No malformed JSON error handling tests (deferred to error module)
-- **Gap:** Edge cases (empty strings, null values) not explicitly tested
-
-### Missing Fixtures ❌
-
-**Directory:** `crates/rusty_claw/tests/fixtures/` (DOES NOT EXIST)
-
-According to SPEC.md section 10.3, the following fixtures should exist:
-- `simple_query.ndjson` - Basic question/answer exchange
-- `tool_use.ndjson` - Tool use request and result cycle
-- `error_response.ndjson` - Error response handling
-- `multi_turn.ndjson` - Multi-turn conversation (optional for this task)
-- `hook_callback.ndjson` - Hook invocation flow (blocked by hooks)
-- `mcp_tool_call.ndjson` - MCP tool invocation (blocked by MCP)
-
----
+### 📋 Specification Reference
+- **SPEC.md Section 5.1**: ClaudeAgentOptions definition (lines 363-446)
+- **SPEC.md Section 2.2**: SubprocessCLITransport CLI arguments (lines 139-151)
+- **SPEC.md Section 4.3**: Control Protocol initialization fields (lines 332-338)
 
 ## What Needs to Be Done
 
-### 1. Create Fixture Directory ✅
+### 1. Create `crates/rusty_claw/src/options.rs` (NEW FILE, ~400 lines)
 
-**Action:** Create `crates/rusty_claw/tests/fixtures/` directory
+Implement the following types:
 
-### 2. Create NDJSON Fixture Files (NEW FILES)
-
-#### A. `simple_query.ndjson` (Basic Query/Response) - ~15 lines
-**Content:** Realistic NDJSON sequence for a simple query:
-1. System::Init message with session_id, tools, mcp_servers
-2. Assistant message with Text content block
-3. Result::Success message with stats
-
-**Purpose:** Verify end-to-end message sequence parsing
-
-#### B. `tool_use.ndjson` (Tool Use Flow) - ~20 lines
-**Content:** Complete tool invocation cycle:
-1. System::Init message
-2. Assistant message with ToolUse content block
-3. User message with ToolResult content block
-4. Assistant message with Text response
-5. Result::Success message
-
-**Purpose:** Verify tool-related message types parse correctly
-
-#### C. `error_response.ndjson` (Error Handling) - ~10 lines
-**Content:** Error scenario:
-1. System::Init message
-2. Assistant message with Text
-3. Result::Error message with error string and extra fields
-
-**Purpose:** Verify error result parsing
-
-#### D. `thinking_content.ndjson` (Extended Thinking) - ~12 lines
-**Content:** Message with thinking tokens:
-1. System::Init message
-2. Assistant message with Thinking + Text content blocks
-3. Result::Success message
-
-**Purpose:** Verify ContentBlock::Thinking parsing
-
-### 3. Add Fixture-Based Tests (MODIFY FILE)
-
-**File:** `crates/rusty_claw/src/messages.rs` (add ~120 lines to tests module)
-
-**New Tests to Add:**
-
-#### A. `test_simple_query_fixture()` - Load and parse simple_query.ndjson
-- Read fixture file line-by-line
-- Deserialize each line as Message
-- Verify message types and key fields
-- Assert 3 messages total (Init, Assistant, Success)
-
-#### B. `test_tool_use_fixture()` - Load and parse tool_use.ndjson
-- Verify ToolUse content block structure
-- Verify ToolResult content block structure
-- Assert correct message sequence
-
-#### C. `test_error_response_fixture()` - Load and parse error_response.ndjson
-- Verify Result::Error parsing
-- Verify extra fields flattening works
-
-#### D. `test_thinking_content_fixture()` - Load and parse thinking_content.ndjson
-- Verify Thinking content block parsing
-- Verify multiple content blocks in single message
-
-#### E. `test_all_fixtures_valid()` - Meta test
-- Iterate through all .ndjson files in fixtures/
-- Verify each line parses as valid Message
-- Catch regressions if fixtures become invalid
-
-### 4. Add Edge Case Tests (MODIFY FILE)
-
-**File:** `crates/rusty_claw/src/messages.rs` (add ~60 lines to tests module)
-
-**New Tests to Add:**
-
-#### A. `test_empty_string_text_content()` - Empty text content
+#### Core Options Struct
 ```rust
-{"type": "text", "text": ""}
-```
-Verify empty string is valid
+#[derive(Debug, Clone, Default)]
+pub struct ClaudeAgentOptions {
+    // Prompt & behavior
+    pub system_prompt: Option<SystemPrompt>,
+    pub append_system_prompt: Option<String>,
+    pub max_turns: Option<u32>,
+    pub model: Option<String>,
 
-#### B. `test_empty_content_array()` - Message with no content blocks
+    // Tools & permissions
+    pub allowed_tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
+    pub permission_mode: Option<PermissionMode>,
+    pub permission_prompt_tool_allowlist: Vec<String>,
+
+    // MCP (placeholder for future tasks)
+    pub mcp_servers: HashMap<String, McpServerConfig>,
+    pub sdk_mcp_servers: Vec<SdkMcpServer>,
+
+    // Hooks (placeholder for future tasks)
+    pub hooks: HashMap<HookEvent, Vec<HookMatcher>>,
+
+    // Subagents (placeholder for future tasks)
+    pub agents: HashMap<String, AgentDefinition>,
+
+    // Session
+    pub resume: Option<String>,
+    pub fork_session: bool,
+    pub session_name: Option<String>,
+    pub enable_file_checkpointing: bool,
+
+    // Environment
+    pub cwd: Option<PathBuf>,
+    pub cli_path: Option<PathBuf>,
+    pub env: HashMap<String, String>,
+
+    // Settings isolation
+    pub settings_sources: Option<Vec<String>>,
+
+    // Output
+    pub output_format: Option<serde_json::Value>,
+    pub include_partial_messages: bool,
+
+    // Advanced
+    pub betas: Vec<String>,
+    pub sandbox_settings: Option<SandboxSettings>,
+}
+```
+
+#### Supporting Enums
 ```rust
-{"type": "assistant", "message": {"role": "assistant", "content": []}}
-```
-Verify empty array is valid
+pub enum SystemPrompt {
+    Custom(String),
+    Preset { preset: String },
+}
 
-#### C. `test_minimal_system_init()` - Minimal Init with empty arrays
+pub enum PermissionMode {
+    Default,
+    AcceptEdits,
+    BypassPermissions,
+    Plan,
+}
+```
+
+#### Placeholder Structs (for future tasks)
 ```rust
-{"type": "system", "subtype": "init", "session_id": "123", "tools": [], "mcp_servers": []}
+// Will be fully implemented in future MCP tasks
+pub struct McpServerConfig {
+    // Placeholder - detailed in SPEC.md section 7.1
+}
+
+pub struct SdkMcpServer {
+    // Placeholder - detailed in SPEC.md section 7.2
+}
+
+// Will be fully implemented in future hook tasks
+pub struct HookEvent;
+pub struct HookMatcher;
+
+// Will be fully implemented in future agent tasks
+pub struct AgentDefinition {
+    pub description: String,
+    pub prompt: String,
+    pub tools: Vec<String>,
+    pub model: Option<String>,
+}
+
+// Will be fully implemented in future sandbox tasks
+pub struct SandboxSettings;
 ```
-Verify minimal required fields
 
-#### D. `test_large_tool_input()` - Large JSON in tool input field
-- Create ToolUse with complex nested input JSON
-- Verify serde_json::Value handles it
+#### Builder Implementation
+```rust
+pub struct ClaudeAgentOptionsBuilder {
+    inner: ClaudeAgentOptions,
+}
 
-#### E. `test_unicode_in_text()` - Unicode characters in text fields
-- Emojis, CJK characters, special symbols
-- Verify UTF-8 handling
+impl ClaudeAgentOptions {
+    pub fn builder() -> ClaudeAgentOptionsBuilder {
+        ClaudeAgentOptionsBuilder::default()
+    }
+}
 
-### 5. Documentation (MODIFY FILE)
+impl ClaudeAgentOptionsBuilder {
+    // Chainable setters for all fields
+    pub fn system_prompt(mut self, prompt: SystemPrompt) -> Self { ... }
+    pub fn max_turns(mut self, turns: u32) -> Self { ... }
+    pub fn model(mut self, model: impl Into<String>) -> Self { ... }
+    pub fn allowed_tools(mut self, tools: Vec<String>) -> Self { ... }
+    pub fn permission_mode(mut self, mode: PermissionMode) -> Self { ... }
+    pub fn cwd(mut self, path: impl Into<PathBuf>) -> Self { ... }
+    // ... (all other fields)
 
-**File:** `crates/rusty_claw/src/messages.rs` (add ~30 lines to module docs)
+    pub fn build(self) -> ClaudeAgentOptions { ... }
+}
+```
 
-**Add Section:** "Test Fixtures"
-- Document fixture directory structure
-- Explain purpose of each fixture file
-- Provide example of loading fixtures in custom tests
-- Reference SPEC.md section 10.3
+#### CLI Arguments Conversion
+```rust
+impl ClaudeAgentOptions {
+    /// Convert options to Claude CLI arguments
+    pub fn to_cli_args(&self, prompt: &str) -> Vec<String> {
+        let mut args = vec![
+            "--output-format=stream-json".to_string(),
+            "--verbose".to_string(),
+        ];
 
----
+        if let Some(max_turns) = self.max_turns {
+            args.push(format!("--max-turns={}", max_turns));
+        }
 
-## Files to Create/Modify
+        if let Some(model) = &self.model {
+            args.push(format!("--model={}", model));
+        }
 
-### New Files (4 fixtures + directory)
+        if let Some(mode) = &self.permission_mode {
+            args.push(format!("--permission-mode={}", mode.to_cli_arg()));
+        }
 
-1. **`crates/rusty_claw/tests/` directory** (CREATE if missing)
-2. **`crates/rusty_claw/tests/fixtures/` directory** (CREATE)
-3. **`crates/rusty_claw/tests/fixtures/simple_query.ndjson`** (~15 lines)
-4. **`crates/rusty_claw/tests/fixtures/tool_use.ndjson`** (~20 lines)
-5. **`crates/rusty_claw/tests/fixtures/error_response.ndjson`** (~10 lines)
-6. **`crates/rusty_claw/tests/fixtures/thinking_content.ndjson`** (~12 lines)
+        // Settings isolation for reproducibility
+        args.push("--settings-sources=".to_string());
 
-### Modified Files
+        // Enable control protocol input
+        args.push("--input-format=stream-json".to_string());
 
-1. **`crates/rusty_claw/src/messages.rs`**
-   - Add 4 fixture-based tests (~120 lines)
-   - Add 5 edge case tests (~60 lines)
-   - Add fixture documentation section (~30 lines)
-   - Total additions: ~210 lines
+        // Prompt
+        args.push("-p".to_string());
+        args.push(prompt.to_string());
 
----
+        args
+    }
+}
+```
 
-## Implementation Strategy
+### 2. Modify `crates/rusty_claw/src/lib.rs` (+2 lines)
 
-### Phase 1: Create Fixtures (15 min)
-1. Create directory structure
-2. Write simple_query.ndjson based on SPEC examples
-3. Write tool_use.ndjson with complete tool cycle
-4. Write error_response.ndjson
-5. Write thinking_content.ndjson
-6. Validate each fixture manually with `jq` or Python
+Add options module:
+```rust
+/// Configuration options and builder
+pub mod options;
+```
 
-### Phase 2: Fixture-Based Tests (20 min)
-1. Add test helper function: `load_fixture(name: &str) -> Vec<Message>`
-2. Implement test_simple_query_fixture()
-3. Implement test_tool_use_fixture()
-4. Implement test_error_response_fixture()
-5. Implement test_thinking_content_fixture()
-6. Implement test_all_fixtures_valid()
-7. Run `cargo test --lib messages` to verify
+Update prelude:
+```rust
+pub use crate::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
+```
 
-### Phase 3: Edge Case Tests (15 min)
-1. Implement test_empty_string_text_content()
-2. Implement test_empty_content_array()
-3. Implement test_minimal_system_init()
-4. Implement test_large_tool_input()
-5. Implement test_unicode_in_text()
-6. Run tests to verify
+### 3. Modify `crates/rusty_claw/src/query.rs` (~10 lines changed)
 
-### Phase 4: Documentation (5 min)
-1. Add "Test Fixtures" section to module docs
-2. Document each fixture's purpose
-3. Add example code snippet for loading fixtures
-4. Cross-reference SPEC.md
+Update function signature and implementation:
+```rust
+// Line 116: Change signature
+pub async fn query(
+    prompt: impl Into<String>,
+    options: Option<ClaudeAgentOptions>,
+) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
+    let prompt = prompt.into();
 
-### Phase 5: Verification (5 min)
-1. Run full test suite: `cargo test --lib message`
-2. Verify zero clippy warnings
-3. Check test coverage report (if available)
-4. Verify all acceptance criteria met
+    // Extract CLI args from options or use defaults
+    let args = if let Some(opts) = options {
+        opts.to_cli_args(&prompt)
+    } else {
+        vec![
+            "--output-format=stream-json".to_string(),
+            "--verbose".to_string(),
+            "-p".to_string(),
+            prompt,
+        ]
+    };
 
----
+    // ... rest of function unchanged
+}
+```
+
+### 4. Add Tests in `crates/rusty_claw/src/options.rs` (~150 lines)
+
+#### Unit Tests:
+- ✅ Builder pattern usage
+- ✅ Default values
+- ✅ Field setters (chaining)
+- ✅ CLI args conversion for all fields
+- ✅ PermissionMode enum variants
+- ✅ SystemPrompt enum variants
+- ✅ Empty options produces minimal CLI args
+- ✅ Complex options with all fields set
+
+Example test structure:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_builder_default() {
+        let opts = ClaudeAgentOptions::builder().build();
+        assert_eq!(opts.max_turns, None);
+        assert_eq!(opts.model, None);
+        assert!(opts.allowed_tools.is_empty());
+    }
+
+    #[test]
+    fn test_builder_chaining() {
+        let opts = ClaudeAgentOptions::builder()
+            .max_turns(5)
+            .model("claude-sonnet-4")
+            .allowed_tools(vec!["Read".to_string(), "Bash".to_string()])
+            .permission_mode(PermissionMode::AcceptEdits)
+            .build();
+
+        assert_eq!(opts.max_turns, Some(5));
+        assert_eq!(opts.model, Some("claude-sonnet-4".to_string()));
+        assert_eq!(opts.allowed_tools.len(), 2);
+    }
+
+    #[test]
+    fn test_to_cli_args_minimal() {
+        let opts = ClaudeAgentOptions::default();
+        let args = opts.to_cli_args("test prompt");
+
+        assert!(args.contains(&"--output-format=stream-json".to_string()));
+        assert!(args.contains(&"--verbose".to_string()));
+        assert!(args.contains(&"--input-format=stream-json".to_string()));
+        assert!(args.contains(&"--settings-sources=".to_string()));
+        assert!(args.contains(&"-p".to_string()));
+        assert!(args.contains(&"test prompt".to_string()));
+    }
+
+    #[test]
+    fn test_to_cli_args_all_fields() {
+        let opts = ClaudeAgentOptions::builder()
+            .max_turns(10)
+            .model("claude-opus-4")
+            .permission_mode(PermissionMode::Plan)
+            .build();
+
+        let args = opts.to_cli_args("test");
+
+        assert!(args.contains(&"--max-turns=10".to_string()));
+        assert!(args.contains(&"--model=claude-opus-4".to_string()));
+        assert!(args.contains(&"--permission-mode=plan".to_string()));
+    }
+
+    #[test]
+    fn test_permission_mode_to_cli_arg() {
+        assert_eq!(PermissionMode::Default.to_cli_arg(), "default");
+        assert_eq!(PermissionMode::AcceptEdits.to_cli_arg(), "accept-edits");
+        assert_eq!(PermissionMode::BypassPermissions.to_cli_arg(), "bypass-permissions");
+        assert_eq!(PermissionMode::Plan.to_cli_arg(), "plan");
+    }
+}
+```
+
+### 5. Add Documentation (~50 lines)
+
+Add module-level documentation with examples:
+```rust
+//! Configuration options and builder pattern for Claude agent sessions
+//!
+//! This module provides [`ClaudeAgentOptions`] for configuring Claude agent behavior,
+//! including prompt settings, tools, permissions, session management, and environment.
+//!
+//! # Example
+//!
+//! ```
+//! use rusty_claw::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
+//!
+//! let options = ClaudeAgentOptions::builder()
+//!     .allowed_tools(vec!["Read".to_string(), "Bash".to_string()])
+//!     .permission_mode(PermissionMode::AcceptEdits)
+//!     .max_turns(5)
+//!     .model("claude-sonnet-4")
+//!     .build();
+//! ```
+//!
+//! # Builder Pattern
+//!
+//! All fields have sensible defaults. Use the builder pattern for convenient configuration:
+//!
+//! ```
+//! let options = ClaudeAgentOptions::builder()
+//!     .system_prompt(SystemPrompt::Custom("You are a helpful assistant".to_string()))
+//!     .max_turns(10)
+//!     .build();
+//! ```
+```
+
+## Design Decisions
+
+### 1. **Builder Pattern**
+- **Choice:** Hand-rolled builder instead of `derive_builder` crate
+- **Rationale:**
+  - Zero additional dependencies (aligns with SPEC.md section 11.1 "Minimal surface")
+  - Simple to implement (~100 lines)
+  - Full control over builder API
+  - No proc macro compile time cost
+
+### 2. **Placeholder Types**
+- **Choice:** Create minimal placeholder structs for MCP, hooks, agents
+- **Rationale:**
+  - Enables complete ClaudeAgentOptions API surface now
+  - Downstream tasks will flesh out these types
+  - Prevents breaking API changes later
+  - Follows SPEC.md structure
+
+### 3. **CLI Arguments Conversion**
+- **Choice:** Implement `to_cli_args()` method on ClaudeAgentOptions
+- **Rationale:**
+  - Central place for CLI argument logic
+  - Used by `query()` function now
+  - Will be used by `ClaudeClient` in future tasks
+  - Follows SPEC.md section 2.2 CLI argument spec
+
+### 4. **Default Values**
+- **Choice:** Use `Default` trait with `None` for optional fields, empty collections
+- **Rationale:**
+  - Sensible defaults for all fields
+  - Follows Rust conventions
+  - Enables partial configuration
+  - No required fields (except prompt in query())
+
+### 5. **Permission Mode Naming**
+- **Choice:** Use Rust enum names: `Default`, `AcceptEdits`, `BypassPermissions`, `Plan`
+- **Rationale:**
+  - Follows Rust naming conventions (PascalCase)
+  - Implements `to_cli_arg()` for snake-case conversion
+  - Matches SPEC.md section 5.1 definition
+
+## File Changes Summary
+
+### New Files (1):
+1. `crates/rusty_claw/src/options.rs` (~400 lines)
+   - ClaudeAgentOptions struct
+   - ClaudeAgentOptionsBuilder
+   - Supporting enums and placeholder types
+   - CLI args conversion
+   - Comprehensive tests
+
+### Modified Files (2):
+1. `crates/rusty_claw/src/lib.rs` (+4 lines)
+   - Add `pub mod options;`
+   - Update prelude exports
+
+2. `crates/rusty_claw/src/query.rs` (~10 lines changed)
+   - Change `options` parameter from `Option<()>` to `Option<ClaudeAgentOptions>`
+   - Use `options.to_cli_args()` instead of hardcoded args
 
 ## Risk Analysis
 
-### ✅ Low Risk
+### 🟢 Low Risk Areas
+1. **Pure Additive Changes**: New module, no modifications to existing types
+2. **Default Trait**: All optional fields, backward compatible
+3. **Builder Pattern**: Standard Rust idiom, well-tested pattern
+4. **Existing Tests**: No impact on existing 29 passing tests
 
-**Reason:** Pure additive changes with no modifications to existing types
-- Adding new test files (no side effects)
-- Adding new tests to existing module (isolated)
-- No changes to production code
-- All existing 19 tests continue to pass
+### 🟡 Medium Risk Areas
+1. **Placeholder Types**: Future tasks must implement full types
+   - **Mitigation**: Document clearly which fields are placeholders
+   - **Mitigation**: Use Rust visibility (`pub(crate)` initially) for unstable types
 
-### 🟡 Medium Risk: Fixture Format Accuracy
+2. **CLI Args Conversion**: Must match Claude CLI exactly
+   - **Mitigation**: Follow SPEC.md section 2.2 precisely
+   - **Mitigation**: Add comprehensive tests for all CLI args
+   - **Mitigation**: Test with real Claude CLI in integration tests
 
-**Concern:** Fixtures must match actual Claude CLI output format
-- **Mitigation:** Base fixtures on SPEC.md examples and existing inline test JSON
-- **Mitigation:** Run against mock CLI (future task rusty_claw-isy will validate)
-- **Mitigation:** Use exact field names/types from current message types
+### 🔴 High Risk Areas
+None identified. This is a foundational configuration type with no side effects.
 
-### 🟡 Medium Risk: Test Execution Environment
+## Dependencies & Blockers
 
-**Concern:** Fixture files must be found at runtime
-- **Mitigation:** Use `env!("CARGO_MANIFEST_DIR")` to get crate root
-- **Mitigation:** Construct paths relative to crate root
-- **Mitigation:** Add clear error messages if fixtures missing
+### ✅ Satisfied Dependencies
+- **rusty_claw-pwc**: Complete (all message types defined)
+- **Cargo dependencies**: All required crates available (serde, serde_json, std collections)
 
-### ✅ No Breaking Changes
+### ⚠️ Blocks Downstream Tasks
+- **rusty_claw-91n** [P1]: Implement Control Protocol handler
+  - Requires ClaudeAgentOptions for initialization
+  - Uses `hooks`, `agents`, `sdk_mcp_servers` fields
 
-- No API changes
-- No type signature changes
-- No dependency changes
-- Fully backward compatible
+## Testing Strategy
 
----
+### Unit Tests (in options.rs)
+1. ✅ Builder default values
+2. ✅ Builder chaining
+3. ✅ All field setters
+4. ✅ CLI args conversion (minimal options)
+5. ✅ CLI args conversion (all fields)
+6. ✅ PermissionMode enum to CLI arg conversion
+7. ✅ SystemPrompt enum variants
+8. ✅ Collections (Vec, HashMap) handling
+9. ✅ PathBuf conversion
+10. ✅ Optional fields handling
+
+### Integration Tests (future)
+- Test with real Claude CLI (verify CLI args work correctly)
+- Test with mock CLI (verify options are passed through transport)
+
+### Documentation Tests
+- Ensure all examples in module docs compile and run
 
 ## Success Criteria
 
-### Acceptance Criteria from Task
+1. ✅ **ClaudeAgentOptions struct created** with all fields from SPEC.md section 5.1
+2. ✅ **Builder pattern implemented** with chainable setters
+3. ✅ **CLI args conversion** working for all fields
+4. ✅ **Supporting enums** (SystemPrompt, PermissionMode) implemented
+5. ✅ **Placeholder types** created for future tasks (MCP, hooks, agents)
+6. ✅ **query() function updated** to use ClaudeAgentOptions
+7. ✅ **Comprehensive tests** (10+ unit tests)
+8. ✅ **Zero clippy warnings** in options.rs
+9. ✅ **All existing tests pass** (no regressions)
+10. ✅ **Complete documentation** with examples
 
-1. ✅ **Create Test Fixtures:**
-   - [x] `crates/rusty_claw/tests/fixtures/simple_query.ndjson`
-   - [x] `crates/rusty_claw/tests/fixtures/tool_use.ndjson`
-   - [x] `crates/rusty_claw/tests/fixtures/error_response.ndjson`
-   - [x] Additional: `thinking_content.ndjson`
+## Implementation Phases
 
-2. ✅ **Implement Unit Tests:**
-   - [x] Test deserialization of each Message variant (via fixtures)
-   - [x] Test deserialization of each ContentBlock type (via fixtures + edge cases)
-   - [x] Verify error handling for malformed JSON (existing error module)
-   - [x] Test edge cases (empty strings, null values, unicode)
+### Phase 1: Core Options Struct (~90 minutes)
+1. Create `options.rs` file
+2. Define `ClaudeAgentOptions` struct with all fields
+3. Implement `Default` trait
+4. Add supporting enums (SystemPrompt, PermissionMode)
+5. Create placeholder types (McpServerConfig, etc.)
+6. Write module-level documentation
 
-3. ✅ **Test Execution:**
-   - [x] `cargo test --lib message` should pass all tests (24 existing + 9 new = 33 total)
-   - [x] Zero clippy warnings
-   - [x] Good test coverage of all variants
+### Phase 2: Builder Pattern (~60 minutes)
+1. Define `ClaudeAgentOptionsBuilder` struct
+2. Implement all setter methods (chainable)
+3. Implement `build()` method
+4. Add builder documentation and examples
 
-4. ✅ **Documentation:**
-   - [x] Document fixtures and their purpose (module docs + inline comments)
-   - [x] Add examples for using fixtures in tests
+### Phase 3: CLI Args Conversion (~45 minutes)
+1. Implement `to_cli_args()` method
+2. Handle all option fields correctly
+3. Follow SPEC.md section 2.2 CLI arguments
+4. Add helper methods (e.g., `PermissionMode::to_cli_arg()`)
 
-### Additional Verification
+### Phase 4: Integration (~30 minutes)
+1. Add `pub mod options;` to lib.rs
+2. Update prelude exports
+3. Modify `query()` function in query.rs
+4. Update query() function signature and docs
 
-- All fixture files are valid NDJSON (no trailing commas, proper line endings)
-- Fixtures represent realistic Claude CLI output
-- Tests run successfully in CI environment
-- No flaky tests (deterministic behavior)
-- Test names follow Rust conventions (`test_snake_case`)
+### Phase 5: Testing (~90 minutes)
+1. Write builder tests
+2. Write CLI args tests
+3. Write enum conversion tests
+4. Write edge case tests
+5. Run full test suite
+6. Fix any clippy warnings
 
----
+### Phase 6: Documentation & Verification (~30 minutes)
+1. Write usage examples
+2. Add inline documentation
+3. Verify all doc tests compile
+4. Run final test suite
+5. Verify against acceptance criteria
 
-## Dependencies
+**Total Estimated Effort:** ~5.5 hours
 
-### Satisfied Dependencies ✅
+## Unblocks
 
-- **rusty_claw-pwc** [P1]: Define shared types and message structs (CLOSED)
-  - All Message types exist
-  - All ContentBlock types exist
-  - Serde derive macros in place
-  - Existing 19 tests verify basic functionality
+Completing this task will unblock:
+- **rusty_claw-91n** [P1]: Implement Control Protocol handler
+  - Needs ClaudeAgentOptions for control protocol initialization
+  - Uses hooks, agents, and sdk_mcp_servers configuration
 
-### Blocks Downstream ⏳
+## Next Steps
 
-This task (rusty_claw-1ke) blocks:
-- **rusty_claw-isy** [P2]: Add integration tests with mock CLI
-  - Fixtures created here will be reused by mock CLI
-  - Fixture format establishes contract between SDK and CLI
+1. ✅ Create `crates/rusty_claw/src/options.rs` (Phase 1)
+2. ✅ Implement builder pattern (Phase 2)
+3. ✅ Implement CLI args conversion (Phase 3)
+4. ✅ Integrate with lib.rs and query.rs (Phase 4)
+5. ✅ Add comprehensive tests (Phase 5)
+6. ✅ Document and verify (Phase 6)
 
----
+## References
 
-## Estimated Effort
-
-- **Fixture Creation:** 15 minutes
-- **Fixture-Based Tests:** 20 minutes
-- **Edge Case Tests:** 15 minutes
-- **Documentation:** 5 minutes
-- **Verification:** 5 minutes
-- **Total:** ~60 minutes (1 hour)
-
----
-
-## Notes
-
-### Fixture Design Principles
-
-1. **Realistic:** Based on actual Claude CLI output format from SPEC
-2. **Minimal:** Only essential fields, avoid unnecessary complexity
-3. **Self-contained:** Each fixture is a complete message sequence
-4. **Documented:** Clear comments explaining each message's purpose
-5. **Reusable:** Can be used by integration tests and mock CLI
-
-### Test Design Principles
-
-1. **Single Responsibility:** Each test verifies one specific behavior
-2. **Descriptive Names:** Test name clearly states what is verified
-3. **Arrange-Act-Assert:** Standard test structure
-4. **No External Dependencies:** Tests run offline without network
-5. **Fast:** All tests complete in < 100ms
-
-### Future Work (Out of Scope)
-
-- Malformed JSON tests (handled by error module, not message parsing)
-- Multi-turn conversation fixtures (deferred to integration tests)
-- Hook callback fixtures (blocked by hooks implementation)
-- MCP tool call fixtures (blocked by MCP implementation)
-- Performance benchmarks (separate task)
-- Fuzz testing (separate task)
+- **SPEC.md Section 5.1**: ClaudeAgentOptions definition (lines 363-446)
+- **SPEC.md Section 2.2**: SubprocessCLITransport CLI arguments (lines 139-151)
+- **SPEC.md Section 4.3**: Control Protocol initialization (lines 332-338)
+- **SPEC.md Section 11.1**: Dependency Philosophy - "Minimal surface"
+- **Python SDK Reference**: `claude-agent-sdk-python` (MIT License)
 
 ---
 
-## Implementation Checklist
-
-### Before Starting
-- [x] Read current_task.md
-- [x] Review messages.rs existing tests
-- [x] Review SPEC.md message format
-- [x] Understand fixture directory structure
-- [x] Plan test cases
-
-### Phase 1: Fixtures
-- [ ] Create `tests/` directory (if missing)
-- [ ] Create `tests/fixtures/` directory
-- [ ] Write `simple_query.ndjson`
-- [ ] Write `tool_use.ndjson`
-- [ ] Write `error_response.ndjson`
-- [ ] Write `thinking_content.ndjson`
-- [ ] Validate fixtures with `jq` (each line is valid JSON)
-
-### Phase 2: Fixture Tests
-- [ ] Add `load_fixture()` helper function
-- [ ] Implement `test_simple_query_fixture()`
-- [ ] Implement `test_tool_use_fixture()`
-- [ ] Implement `test_error_response_fixture()`
-- [ ] Implement `test_thinking_content_fixture()`
-- [ ] Implement `test_all_fixtures_valid()`
-- [ ] Run `cargo test --lib messages::tests`
-
-### Phase 3: Edge Cases
-- [ ] Implement `test_empty_string_text_content()`
-- [ ] Implement `test_empty_content_array()`
-- [ ] Implement `test_minimal_system_init()`
-- [ ] Implement `test_large_tool_input()`
-- [ ] Implement `test_unicode_in_text()`
-- [ ] Run tests
-
-### Phase 4: Documentation
-- [ ] Add "Test Fixtures" section to module docs
-- [ ] Document each fixture file
-- [ ] Add usage example
-
-### Phase 5: Verification
-- [ ] Run full test suite: `cargo test --lib message`
-- [ ] Check clippy: `cargo clippy -- -D warnings`
-- [ ] Verify test count (33 total: 19 existing + 5 fixture + 5 edge + 1 meta + 3 new)
-- [ ] Update `.attractor/test-results.md`
-
----
-
-## Conclusion
-
-This task is **ready for implementation** with:
-- ✅ Clear requirements from task description
-- ✅ All dependencies satisfied (message types exist)
-- ✅ No blockers
-- ✅ Well-defined scope (fixtures + tests only, no type changes)
-- ✅ Low risk (additive changes only)
-- ✅ Reasonable effort estimate (~1 hour)
-
-The implementation will provide:
-1. Reusable NDJSON fixtures for integration tests
-2. Comprehensive test coverage of all message variants
-3. Edge case validation
-4. Documentation for future fixture usage
-
-Next step: Begin Phase 1 (Create Fixtures) 🚀
+**Investigation Complete** ✅
+Ready to proceed with implementation!

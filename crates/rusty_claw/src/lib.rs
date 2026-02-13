@@ -67,6 +67,9 @@ pub mod messages;
 /// Simple query API for one-shot Claude interactions
 pub mod query;
 
+/// Configuration options and builder
+pub mod options;
+
 // Public API re-exports
 pub use query::query;
 
@@ -81,6 +84,7 @@ pub mod prelude {
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
+    pub use crate::options::{ClaudeAgentOptions, PermissionMode, SystemPrompt};
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }

@@ -1,52 +1,31 @@
-# Current Task: rusty_claw-1ke
+# Current Task: rusty_claw-dss
 
-## Task Details
-- **ID:** rusty_claw-1ke
-- **Title:** Add unit tests for message parsing and fixtures
+## Task Information
+- **ID:** rusty_claw-dss
+- **Title:** Implement ClaudeAgentOptions builder
 - **Type:** task
 - **Priority:** P2 (Medium)
 - **Status:** in_progress
 - **Owner:** Scott Nixon
 
 ## Description
-Create test fixtures (simple_query.ndjson, tool_use.ndjson, error_response.ndjson, etc.) and unit tests to verify deserialization of all Message variants and ContentBlock types.
+Implement ClaudeAgentOptions struct with builder pattern covering system_prompt, max_turns, model, allowed_tools, permission_mode, mcp_servers, hooks, agents, session, environment, and output settings.
 
 ## Dependencies
-- ✅ **rusty_claw-pwc:** Define shared types and message structs (COMPLETED)
+- ✓ **COMPLETED:** rusty_claw-pwc - Define shared types and message structs [P1]
 
 ## Blocks
-- ⏳ **rusty_claw-isy:** Add integration tests with mock CLI (blocked by this task)
+- ○ **BLOCKED BY THIS TASK:** rusty_claw-91n - Implement Control Protocol handler [P1]
 
-## Acceptance Criteria
+## Key Points
+- Implement builder pattern for flexible configuration
+- Cover all configuration options: system_prompt, max_turns, model, allowed_tools, permission_mode, mcp_servers, hooks, agents, session, environment, and output settings
+- Enable downstream Control Protocol handler implementation
+- Production-ready builder with sensible defaults
 
-1. **Create Test Fixtures:**
-   - `crates/rusty_claw/tests/fixtures/simple_query.ndjson` - Simple query/response exchange
-   - `crates/rusty_claw/tests/fixtures/tool_use.ndjson` - Tool use request and result
-   - `crates/rusty_claw/tests/fixtures/error_response.ndjson` - Error response handling
-   - Additional variants as needed for comprehensive coverage
-
-2. **Implement Unit Tests:**
-   - Test deserialization of each Message variant
-   - Test deserialization of each ContentBlock type
-   - Verify error handling for malformed JSON
-   - Test edge cases (empty strings, null values, etc.)
-
-3. **Test Execution:**
-   - `cargo test --lib message` should pass all tests
-   - Zero clippy warnings
-   - Good test coverage of all variants
-
-4. **Documentation:**
-   - Document fixtures and their purpose
-   - Add examples for using fixtures in tests
-
-## Key Files
-- `crates/rusty_claw/src/message.rs` - Message types and tests
-- `crates/rusty_claw/tests/fixtures/` - Test fixtures directory (to be created)
-
-## Implementation Notes
-- Fixtures should be representative of real Claude API responses
-- Tests should verify correct deserialization with valid data
-- Error cases tested separately in error module
-- All Message variants need coverage: Text, ToolUse, ToolResult
-- All ContentBlock types need coverage
+## Next Steps
+1. Review existing types from rusty_claw-pwc
+2. Design ClaudeAgentOptions struct with all required fields
+3. Implement builder pattern
+4. Add comprehensive tests
+5. Document usage examples

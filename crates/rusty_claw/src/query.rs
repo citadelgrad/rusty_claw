@@ -7,11 +7,17 @@
 //!
 //! ```ignore
 //! use rusty_claw::query;
+//! use rusty_claw::options::{ClaudeAgentOptions, PermissionMode};
 //! use tokio_stream::StreamExt;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let mut stream = query("What files are in this directory?", None).await?;
+//!     let options = ClaudeAgentOptions::builder()
+//!         .max_turns(5)
+//!         .permission_mode(PermissionMode::AcceptEdits)
+//!         .build();
+//!
+//!     let mut stream = query("What files are in this directory?", Some(options)).await?;
 //!
 //!     while let Some(result) = stream.next().await {
 //!         match result {
@@ -30,6 +36,7 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::error::ClawError;
 use crate::messages::Message;
+use crate::options::ClaudeAgentOptions;
 use crate::transport::{SubprocessCLITransport, Transport};
 
 /// A stream wrapper that owns the transport to ensure proper lifetime management
@@ -77,7 +84,7 @@ where
 /// # Arguments
 ///
 /// * `prompt` - The prompt string to send to Claude
-/// * `options` - Optional configuration (currently unused; will be `ClaudeAgentOptions` in future)
+/// * `options` - Optional configuration using [`ClaudeAgentOptions`]
 ///
 /// # Returns
 ///
@@ -96,11 +103,17 @@ where
 ///
 /// ```ignore
 /// use rusty_claw::query;
+/// use rusty_claw::options::{ClaudeAgentOptions, PermissionMode};
 /// use tokio_stream::StreamExt;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     let mut stream = query("What files are in this directory?", None).await?;
+///     let options = ClaudeAgentOptions::builder()
+///         .max_turns(5)
+///         .permission_mode(PermissionMode::AcceptEdits)
+///         .build();
+///
+///     let mut stream = query("What files are in this directory?", Some(options)).await?;
 ///
 ///     while let Some(result) = stream.next().await {
 ///         match result {
@@ -113,18 +126,23 @@ where
 /// ```
 pub async fn query(
     prompt: impl Into<String>,
-    _options: Option<()>, // TODO: Change to Option<ClaudeAgentOptions> when rusty_claw-dss is complete
+    options: Option<ClaudeAgentOptions>,
 ) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
     let prompt = prompt.into();
 
-    // TODO: Extract CLI args from options when ClaudeAgentOptions exists
-    // For now, hardcode minimal required arguments
-    let args = vec![
-        "--output-format=stream-json".to_string(),
-        "--verbose".to_string(),
-        "-p".to_string(),
-        prompt,
-    ];
+    // Extract CLI args from options or use defaults
+    let args = if let Some(opts) = options {
+        opts.to_cli_args(&prompt)
+    } else {
+        vec![
+            "--output-format=stream-json".to_string(),
+            "--verbose".to_string(),
+            "--settings-sources=".to_string(),
+            "--input-format=stream-json".to_string(),
+            "-p".to_string(),
+            prompt,
+        ]
+    };
 
     // Create transport with auto-discovery (None = discover CLI from PATH/env/common locations)
     let mut transport = SubprocessCLITransport::new(None, args);
