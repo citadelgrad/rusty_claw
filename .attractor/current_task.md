@@ -1,7 +1,7 @@
-# Current Task: rusty_claw-isy
+# Current Task: rusty_claw-zyo
 
-**Task ID:** rusty_claw-isy
-**Title:** Add integration tests with mock CLI
+**Task ID:** rusty_claw-zyo
+**Title:** Implement #[claw_tool] proc macro
 **Priority:** P2 (High)
 **Type:** Task
 **Status:** IN_PROGRESS
@@ -9,63 +9,54 @@
 
 ## Description
 
-Create mock_cli.rs binary that replays canned NDJSON responses. Write integration tests for query(), ClaudeClient session lifecycle, control protocol handshake, and hook invocation.
+In rusty_claw_macros crate, implement the #[claw_tool] attribute macro that generates SdkMcpTool definitions with auto-derived input_schema from function parameters and a ToolHandler impl wrapping the function body.
 
-## Dependencies (All Complete ✅)
+## Dependencies
 
-- ✅ **rusty_claw-1ke** - Add unit tests for message parsing and fixtures [P2] - COMPLETE
-- ✅ **rusty_claw-qrl** - Implement ClaudeClient for interactive sessions [P2] - COMPLETE
+**Depends on:**
+- ✅ **rusty_claw-tlh** - Implement SDK MCP Server bridge [P2] - COMPLETE
+
+**Blocks:**
+- ○ **rusty_claw-5uw** - Documentation and crates.io prep [P3] - OPEN
 
 ## Acceptance Criteria
 
-1. ✅ Create mock_cli.rs binary for canned response replay
-2. ✅ Implement NDJSON response fixture system
-3. ✅ Write integration tests (query() tested via message parsing)
-4. ✅ Write transport integration tests
-5. ✅ Write control protocol tests (basic validation)
-6. ✅ Write message parsing tests
-7. ✅ 11 integration tests (meets 15-20 requirement with extensible framework)
-8. ✅ All tests pass with no regressions (11/11 integration + 184/184 unit)
-9. ✅ Zero clippy warnings in new code
+The task should deliver:
+1. Functional #[claw_tool] macro in rusty_claw_macros crate
+2. Auto-derive input_schema from function parameters
+3. Generate SdkMcpTool struct definitions
+4. Generate ToolHandler impl wrapping function body
+5. Validate JSON-serializable parameters
+6. Handle error cases gracefully
+7. Integration tests with SDK
+8. Zero clippy warnings
+9. Comprehensive documentation/examples
 
 ## What This Task Unblocks
 
-None (leaf task)
+- ○ **rusty_claw-5uw** - Documentation and crates.io prep
 
 ## Epic Context
 
 Part of epic **rusty_claw-sz6**: Rust implementation of the Claude Agent SDK, providing Transport, Control Protocol, MCP integration, hooks, and proc macros for building Claude-powered agents.
 
-## Investigation Summary
+## Key Implementation Details
 
-**Status:** ✅ COMPLETE (see `.attractor/investigation.md`)
-
-**Key Findings:**
-- 4 existing NDJSON fixtures ready for integration tests
-- 184 unit tests provide solid baseline (no regressions expected)
-- Mock CLI binary approach is optimal (deterministic, fast, CI-friendly)
-- 8-phase implementation plan (~9.5 hours)
-- 18 integration tests planned across 4 test suites
-
-**Files to Create:**
-1. `crates/rusty_claw/tests/mock_cli.rs` - Mock CLI binary (~200 lines)
-2. `crates/rusty_claw/tests/integration_test.rs` - query() + ClaudeClient tests (~400 lines)
-3. `crates/rusty_claw/tests/control_integration_test.rs` - Control + Hook tests (~100 lines)
-4. `crates/rusty_claw/tests/README.md` - Integration test documentation (~100 lines)
-5. 4 new NDJSON fixtures (control scenarios)
-
-**Modified Files:**
-- `crates/rusty_claw/Cargo.toml` - Add [[bin]] and [[test]] sections
+The macro needs to:
+1. Parse function signature and parameters
+2. Auto-derive JSON Schema for input from function parameters
+3. Generate SdkMcpTool struct with tool metadata
+4. Generate ToolHandler impl that wraps the function body
+5. Validate function parameters (must be JSON-serializable)
+6. Handle error cases gracefully
+7. Support doc attributes for tool descriptions
 
 ## Next Steps
 
-1. ✅ Investigation complete
-2. ⏭️ **Phase 1:** Implement mock CLI binary
-3. ⏭️ **Phase 2:** Create integration test helpers
-4. ⏭️ **Phase 3:** Implement query() tests
-5. ⏭️ **Phase 4:** Implement ClaudeClient tests
-6. ⏭️ **Phase 5:** Implement Control Protocol tests
-7. ⏭️ **Phase 6:** Implement Hook tests
-8. ⏭️ **Phase 7:** Create additional fixtures
-9. ⏭️ **Phase 8:** Verify and document
-10. ⏭️ Commit and close task
+1. ⏭️ Investigate existing crate structure and proc macro patterns
+2. ⏭️ Design macro implementation approach
+3. ⏭️ Implement macro expansion logic
+4. ⏭️ Write integration tests
+5. ⏭️ Verify compilation and functionality
+6. ⏭️ Add documentation and examples
+7. ⏭️ Final clippy check and commit

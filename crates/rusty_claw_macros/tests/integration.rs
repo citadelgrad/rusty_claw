@@ -195,7 +195,7 @@ async fn test_tool_execution_optional_provided() {
     #[claw_tool]
     async fn search_with_limit(query: String, limit: Option<i32>) -> ToolResult {
         let max = limit.unwrap_or(10);
-        ToolResult::text(format!("Limit: {}", max))
+        ToolResult::text(format!("Query: {}, Limit: {}", query, max))
     }
 
     let tool = search_with_limit();
@@ -205,7 +205,7 @@ async fn test_tool_execution_optional_provided() {
     })).await.unwrap();
 
     match &result.content[0] {
-        ToolContent::Text { text } => assert_eq!(text, "Limit: 20"),
+        ToolContent::Text { text } => assert!(text.contains("Limit: 20")),
         _ => panic!("Expected text content"),
     }
 }
@@ -216,7 +216,7 @@ async fn test_tool_execution_optional_missing() {
     #[claw_tool]
     async fn search_without_limit(query: String, limit: Option<i32>) -> ToolResult {
         let max = limit.unwrap_or(10);
-        ToolResult::text(format!("Limit: {}", max))
+        ToolResult::text(format!("Query: {}, Limit: {}", query, max))
     }
 
     let tool = search_without_limit();
@@ -225,7 +225,7 @@ async fn test_tool_execution_optional_missing() {
     })).await.unwrap();
 
     match &result.content[0] {
-        ToolContent::Text { text } => assert_eq!(text, "Limit: 10"),
+        ToolContent::Text { text } => assert!(text.contains("Limit: 10")),
         _ => panic!("Expected text content"),
     }
 }
