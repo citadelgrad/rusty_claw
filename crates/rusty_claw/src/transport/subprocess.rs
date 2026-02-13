@@ -63,7 +63,7 @@ pub struct SubprocessCLITransport {
     stdin: Arc<Mutex<Option<ChildStdin>>>,
 
     /// Message receiver (moved out on first call to messages())
-    messages_rx: Arc<Mutex<Option<MessageReceiver>>>,
+    messages_rx: Arc<std::sync::Mutex<Option<MessageReceiver>>>,
 
     /// Connection state (true if process is alive and connected)
     connected: Arc<AtomicBool>,
@@ -112,7 +112,7 @@ impl SubprocessCLITransport {
         Self {
             child: None,
             stdin: Arc::new(Mutex::new(None)),
-            messages_rx: Arc::new(Mutex::new(None)),
+            messages_rx: Arc::new(std::sync::Mutex::new(None)),
             connected: Arc::new(AtomicBool::new(false)),
             cli_path_arg: cli_path,
             cli_path: Arc::new(Mutex::new(None)),
@@ -347,7 +347,7 @@ impl Transport for SubprocessCLITransport {
 
         // Set up message channel
         let (tx, rx) = mpsc::unbounded_channel();
-        *self.messages_rx.lock().await = Some(rx);
+        *self.messages_rx.lock().unwrap() = Some(rx);
 
         // Store stdin
         *self.stdin.lock().await = Some(stdin);
@@ -387,15 +387,8 @@ impl Transport for SubprocessCLITransport {
     }
 
     fn messages(&self) -> MessageReceiver {
-        // Block on the lock to take the receiver
-        // This is safe because we're in a sync context (non-async trait method)
-        let rt = tokio::runtime::Handle::try_current()
-            .expect("messages() must be called from within a tokio runtime");
-
-        rt.block_on(async {
-            self.messages_rx.lock().await.take()
-                .expect("messages() can only be called once per connection")
-        })
+        self.messages_rx.lock().unwrap().take()
+            .expect("messages() can only be called once per connection")
     }
 
     async fn end_input(&self) -> Result<(), ClawError> {
