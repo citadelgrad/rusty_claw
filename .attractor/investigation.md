@@ -1,578 +1,617 @@
-# Investigation: rusty_claw-tlh - Implement SDK MCP Server bridge
+# Investigation: rusty_claw-isy - Add integration tests with mock CLI
 
-**Task ID:** rusty_claw-tlh
+**Task ID:** rusty_claw-isy
+**Priority:** P2 (High)
 **Status:** IN_PROGRESS
 **Date:** 2026-02-13
 
----
-
 ## Executive Summary
 
-This task implements the **MCP (Model Context Protocol) server bridge** within the Rusty Claw SDK. The MCP server bridge enables SDK users to register Rust functions as tools that can be invoked by Claude via the MCP protocol. The implementation includes:
-
-1. **SdkMcpServer** - Main MCP server struct managing tool registry and JSON-RPC routing
-2. **SdkMcpTool** - Tool wrapper containing metadata and handler reference
-3. **ToolHandler** trait - Async trait for tool execution
-4. **ToolResult/ToolContent** types - Result representation for MCP responses
-5. **JSON-RPC routing** - Handler methods for `initialize`, `tools/list`, `tools/call`
-
----
+This task requires creating **integration tests** for the Rusty Claw SDK using a **mock CLI binary** that replays canned NDJSON responses. Unlike unit tests (which mock individual components), integration tests verify end-to-end behavior by simulating a complete Claude CLI subprocess.
 
 ## Current State Analysis
 
-### What Exists (Solid Foundation)
+### ✅ What Already Exists
 
-#### 1. Control Protocol Infrastructure ✅
-**File:** `crates/rusty_claw/src/control/mod.rs`
+**1. NDJSON Fixtures (4 files)** - Located in `crates/rusty_claw/tests/fixtures/`:
+- `simple_query.ndjson` - Basic query with success result
+- `tool_use.ndjson` - Multi-turn interaction with tool use
+- `error_response.ndjson` - Error handling scenario
+- `thinking_content.ndjson` - Thinking blocks example
 
-The Control Protocol implementation provides:
-- **Request/response routing** - `ControlProtocol::request()` for sending requests to CLI
-- **Handler dispatch** - `ControlProtocol::handle_incoming()` routes CLI requests to registered handlers
-- **McpMessageHandler trait** (lines 186-199) - Already defined for routing MCP messages:
-  ```rust
-  #[async_trait]
-  pub trait McpMessageHandler: Send + Sync {
-      async fn handle(&self, server_name: &str, message: Value) -> Result<Value, ClawError>;
-  }
-  ```
-- **Handler registration** - `ControlHandlers::register_mcp_message()` (line 341)
-- **Control message routing** - `IncomingControlRequest::McpMessage` variant (lines 305-311)
+**2. Comprehensive Unit Tests** - 184 tests covering:
+- Transport layer (SubprocessCLITransport)
+- Message parsing and serialization
+- Control Protocol request/response handling
+- ClaudeClient lifecycle (without real CLI)
+- Hook system
+- Permission management
+- MCP server bridge
 
-**Key Insight:** The infrastructure for **routing MCP messages from CLI → SDK** already exists! We just need to implement the handler that:
-1. Deserializes JSON-RPC requests
-2. Routes to appropriate SdkMcpServer method
-3. Serializes JSON-RPC responses
+**3. Test Infrastructure:**
+- `tests/` directory structure exists
+- `fixtures/` directory with NDJSON files
+- tokio test utilities in dev-dependencies
+- MockTransport pattern (in control/mod.rs tests)
 
-#### 2. SdkMcpServer Placeholder ✅
-**File:** `crates/rusty_claw/src/options.rs` (lines 95-98)
+### ❌ What Needs to Be Built
 
-Current placeholder:
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SdkMcpServer {
-    // Detailed implementation in future tasks (SPEC.md section 7.2)
-}
-```
+**1. Mock CLI Binary (`mock_cli.rs`):**
+- Standalone binary that can be executed like the real `claude` CLI
+- Reads a fixture path from command-line args or environment variable
+- Replays NDJSON lines from the fixture to stdout
+- Simulates realistic timing and behavior
+- Handles signal interruption (SIGTERM, SIGINT)
+- Implements minimal CLI interface (version check, help text)
 
-**Action Required:** Expand this with full implementation
+**2. Integration Test Framework:**
+- Helper functions to spawn mock CLI with fixtures
+- Assertion helpers for message sequences
+- Timeout and error handling utilities
+- Test cleanup (process termination)
 
-#### 3. Control Messages Support ✅
-**File:** `crates/rusty_claw/src/control/messages.rs`
+**3. Integration Tests (15-20 tests minimum):**
+- **query() tests** (5-6 tests)
+  - Simple query with text response
+  - Query with tool use
+  - Query with error response
+  - Query with thinking blocks
+  - Query timeout handling
+  - Stream completion and cleanup
 
-The `Initialize` control request already supports `sdk_mcp_servers`:
-```rust
-Initialize {
-    hooks: HashMap<HookEvent, Vec<HookMatcher>>,
-    agents: HashMap<String, AgentDefinition>,
-    sdk_mcp_servers: Vec<SdkMcpServer>,  // ✅ Already included
-    permissions: Option<PermissionMode>,
-    can_use_tool: bool,
-}
-```
+- **ClaudeClient lifecycle tests** (5-6 tests)
+  - Connect and disconnect
+  - Send message and receive response
+  - Multiple message exchanges
+  - Control operations (interrupt, set_model, etc.)
+  - Handler registration and invocation
+  - Session state management
 
-**Result:** When we create an `SdkMcpServer`, it will automatically be sent to the CLI during initialization!
+- **Control Protocol handshake tests** (2-3 tests)
+  - Initialization request/response
+  - Request ID matching
+  - Timeout handling
 
-#### 4. Dependencies ✅
-All required dependencies are already in `Cargo.toml`:
-- ✅ `tokio` - Async runtime
-- ✅ `async-trait` - Async trait support
-- ✅ `serde` + `serde_json` - Serialization
-- ✅ `uuid` - Request ID generation (if needed)
+- **Hook invocation tests** (2-3 tests)
+  - Hook registration and callback
+  - Hook with control protocol
+  - Multiple hook handlers
 
-**No new dependencies required!**
+## Architecture Design
 
----
-
-## Required Implementation
-
-### Architecture Overview
+### Mock CLI Binary Design
 
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│                     MCP Server Bridge                          │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │                 SdkMcpServer                             │ │
-│  │                                                          │ │
-│  │  pub name: String                                        │ │
-│  │  pub version: String                                     │ │
-│  │  tools: Vec<SdkMcpTool>                                  │ │
-│  │                                                          │ │
-│  │  Methods:                                                │ │
-│  │  - new() → Self                                          │ │
-│  │  - register_tool(tool: SdkMcpTool)                       │ │
-│  │  - handle_jsonrpc(request: Value) → Value                │ │
-│  │  - handle_initialize(request: &Value) → Value            │ │
-│  │  - handle_tools_list(request: &Value) → Value            │ │
-│  │  - handle_tools_call(request: &Value) → Result<Value>    │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                          │                                     │
-│                          │ Contains Vec<SdkMcpTool>            │
-│                          ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │                 SdkMcpTool                               │ │
-│  │                                                          │ │
-│  │  pub name: String                                        │ │
-│  │  pub description: String                                 │ │
-│  │  pub input_schema: serde_json::Value                     │ │
-│  │  handler: Arc<dyn ToolHandler>                           │ │
-│  │                                                          │ │
-│  │  Methods:                                                │ │
-│  │  - new(name, description, schema, handler) → Self        │ │
-│  │  - to_tool_definition() → serde_json::Value              │ │
-│  │  - execute(args: Value) → Result<ToolResult>             │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                          │                                     │
-│                          │ Uses Arc<dyn ToolHandler>           │
-│                          ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │         ToolHandler (async trait)                        │ │
-│  │                                                          │ │
-│  │  async fn call(&self, args: Value)                       │ │
-│  │      → Result<ToolResult, ClawError>                     │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                          │                                     │
-│                          │ Returns                             │
-│                          ▼                                     │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │              ToolResult + ToolContent                    │ │
-│  │                                                          │ │
-│  │  pub struct ToolResult {                                 │ │
-│  │      pub content: Vec<ToolContent>,                      │ │
-│  │      pub is_error: bool,                                 │ │
-│  │  }                                                       │ │
-│  │                                                          │ │
-│  │  pub enum ToolContent {                                  │ │
-│  │      Text { text: String },                              │ │
-│  │      Image { data: String, mime_type: String },          │ │
-│  │  }                                                       │ │
-│  └──────────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                         │
-                         │ Registered via McpMessageHandler
-                         ▼
-        ┌────────────────────────────────────────┐
-        │       ControlProtocol                  │
-        │   (existing infrastructure)            │
-        │                                        │
-        │  - handle_incoming() routes            │
-        │    IncomingControlRequest::McpMessage  │
-        │  - Calls McpMessageHandler::handle()   │
-        └────────────────────────────────────────┘
-                         │
-                         │ JSON-RPC messages from CLI
-                         ▼
-              ┌──────────────────────┐
-              │    Claude Code CLI   │
-              │   (MCP client)       │
-              └──────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│              mock_cli binary                        │
+│                                                     │
+│  1. Parse CLI args (--fixture=path)                │
+│  2. Load NDJSON fixture from disk                  │
+│  3. For each line:                                 │
+│     - Parse JSON                                   │
+│     - Write line to stdout                         │
+│     - Flush stdout                                 │
+│     - Sleep 10-50ms (realistic delay)              │
+│  4. Exit with code 0                               │
+│                                                     │
+│  Special handling:                                 │
+│  - SIGTERM/SIGINT → graceful exit                  │
+│  - --version → print "mock-cli 2.0.0"              │
+│  - --help → print usage text                       │
+└─────────────────────────────────────────────────────┘
 ```
 
-### Message Flow
+**Binary Location:**
+- Source: `crates/rusty_claw/tests/mock_cli.rs` (test-only binary)
+- Binary: `target/debug/mock_cli` (built via Cargo)
 
-**1. Registration (Initialization):**
-```
-SDK creates SdkMcpServer
-  → Register with ClaudeAgentOptions
-  → ControlProtocol::initialize() sends to CLI
-  → CLI knows about SDK-hosted MCP server
-```
+**Cargo.toml Configuration:**
+```toml
+[[test]]
+name = "integration"
+path = "tests/integration_test.rs"
+harness = true
 
-**2. Tool List Request:**
-```
-CLI sends JSON-RPC: {"method": "tools/list", ...}
-  → IncomingControlRequest::McpMessage
-  → ControlProtocol::handle_incoming()
-  → McpMessageHandler::handle()
-  → SdkMcpServer::handle_jsonrpc()
-  → SdkMcpServer::handle_tools_list()
-  → Returns tool definitions JSON
+[[bin]]
+name = "mock_cli"
+path = "tests/mock_cli.rs"
+test = false
 ```
 
-**3. Tool Execution:**
-```
-CLI sends JSON-RPC: {"method": "tools/call", "params": {...}}
-  → IncomingControlRequest::McpMessage
-  → ControlProtocol::handle_incoming()
-  → McpMessageHandler::handle()
-  → SdkMcpServer::handle_jsonrpc()
-  → SdkMcpServer::handle_tools_call()
-  → Find tool by name
-  → SdkMcpTool::execute()
-  → ToolHandler::call()
-  → Returns ToolResult
-  → Serialize to JSON-RPC response
-```
+### Integration Test Architecture
 
----
+```text
+┌────────────────────────────────────────────────────┐
+│         Integration Test Suite                     │
+│                                                    │
+│  ┌──────────────────────────────────────────┐    │
+│  │  Test Helper Functions                   │    │
+│  │  • spawn_mock_cli(fixture_path)          │    │
+│  │  • assert_message_sequence(stream, ...)  │    │
+│  │  • timeout_after(duration, future)       │    │
+│  │  • cleanup_mock_cli(handle)              │    │
+│  └──────────────────────────────────────────┘    │
+│                                                    │
+│  ┌──────────────────────────────────────────┐    │
+│  │  query() Integration Tests               │    │
+│  │  • test_query_simple()                   │    │
+│  │  • test_query_with_tool_use()            │    │
+│  │  • test_query_error_response()           │    │
+│  │  • test_query_thinking_blocks()          │    │
+│  └──────────────────────────────────────────┘    │
+│                                                    │
+│  ┌──────────────────────────────────────────┐    │
+│  │  ClaudeClient Integration Tests          │    │
+│  │  • test_client_connect_disconnect()      │    │
+│  │  • test_client_send_message()            │    │
+│  │  • test_client_interrupt()               │    │
+│  │  • test_client_control_operations()      │    │
+│  └──────────────────────────────────────────┘    │
+│                                                    │
+│  ┌──────────────────────────────────────────┐    │
+│  │  Control Protocol Integration Tests      │    │
+│  │  • test_control_handshake()              │    │
+│  │  • test_control_request_response()       │    │
+│  └──────────────────────────────────────────┘    │
+│                                                    │
+│  ┌──────────────────────────────────────────┐    │
+│  │  Hook Integration Tests                  │    │
+│  │  • test_hook_invocation()                │    │
+│  │  • test_multiple_hooks()                 │    │
+│  └──────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────┘
+         ↓ uses ↓
+┌────────────────────────────────────────────────────┐
+│         mock_cli binary                            │
+│  (replays NDJSON fixtures)                         │
+└────────────────────────────────────────────────────┘
+```
 
 ## Implementation Plan
 
-### Phase 1: Core Types (90 min)
+### Phase 1: Mock CLI Binary (90 minutes)
 
-**File:** `crates/rusty_claw/src/mcp_server.rs` (NEW)
+**Files to Create:**
+1. `crates/rusty_claw/tests/mock_cli.rs` (~200 lines)
 
-#### 1.1 ToolContent enum (~15 min)
-- Text variant with text field
-- Image variant with data + mime_type fields
-- Serde tagging for JSON-RPC format
-- Helper constructors
+**Implementation Steps:**
+1. Create binary skeleton with CLI arg parsing (clap or manual)
+2. Implement fixture loading and validation
+3. Add NDJSON replay loop with realistic delays
+4. Add signal handling (SIGTERM, SIGINT)
+5. Add --version and --help flags
+6. Test manually with existing fixtures
 
-#### 1.2 ToolResult struct (~15 min)
-- content: Vec<ToolContent> field
-- is_error: bool field
-- Helper constructors: text(), error()
+**Key Requirements:**
+- Exit code 0 on success, non-zero on error
+- Flush stdout after each line (required for NDJSON streaming)
+- Sleep 10-50ms between messages (simulate real CLI)
+- Handle broken pipe (client disconnect)
+- Validate JSON before writing (fail early on malformed fixtures)
 
-#### 1.3 ToolHandler trait (~30 min)
-- Async trait for tool execution
-- Thread-safe (Send + Sync)
-- Takes JSON args, returns ToolResult
+### Phase 2: Integration Test Helpers (60 minutes)
 
-#### 1.4 Tests (~30 min)
-- Test ToolContent serialization
-- Test ToolResult creation
-- Test ToolHandler trait with mock
+**Files to Create:**
+1. `crates/rusty_claw/tests/integration_test.rs` (~150 lines helpers)
 
----
+**Helper Functions:**
+```rust
+// Spawn mock CLI with fixture
+async fn spawn_mock_cli(fixture_name: &str) -> Result<(SubprocessCLITransport, Child), ClawError>
 
-### Phase 2: SdkMcpTool (60 min)
+// Assert message sequence matches expected types
+fn assert_message_sequence(messages: Vec<Message>, expected: &[&str])
 
-#### 2.1 SdkMcpTool struct (~20 min)
-- name, description, input_schema fields
-- Arc-wrapped handler for shared ownership
+// Timeout helper
+async fn timeout_after<F, T>(duration: Duration, future: F) -> Result<T, ClawError>
+    where F: Future<Output = T>
 
-#### 2.2 Methods (~20 min)
-- new() constructor
-- to_tool_definition() for JSON-RPC
-- execute() delegates to handler
+// Cleanup helper
+async fn cleanup_mock_cli(child: Child) -> Result<(), ClawError>
 
-#### 2.3 Tests (~20 min)
-- Test tool creation
-- Test to_tool_definition() serialization
-- Test execute() with mock handler
+// Get fixture path
+fn fixture_path(name: &str) -> PathBuf
+```
 
----
+### Phase 3: query() Integration Tests (90 minutes)
 
-### Phase 3: SdkMcpServer Core (90 min)
+**Test Coverage:**
+```rust
+#[tokio::test]
+async fn test_query_simple() {
+    // Use simple_query.ndjson fixture
+    // Verify: init → assistant → result
+    // Verify: result contains success status
+}
 
-#### 3.1 Update SdkMcpServer in options.rs (~15 min)
-- Add name and version fields
-- Keep minimal for serialization
+#[tokio::test]
+async fn test_query_with_tool_use() {
+    // Use tool_use.ndjson fixture
+    // Verify: init → assistant (tool_use) → user (tool_result) → assistant → result
+    // Verify: tool_use_id matches tool_result
+}
 
-#### 3.2 Full SdkMcpServerImpl (~45 min)
-- Tool registry (HashMap)
-- register_tool(), get_tool(), list_tools()
+#[tokio::test]
+async fn test_query_error_response() {
+    // Use error_response.ndjson fixture
+    // Verify: init → assistant → result (error)
+    // Verify: error message and code present
+}
 
-#### 3.3 Tests (~30 min)
-- Test server creation
-- Test tool registration
-- Test list_tools() output
+#[tokio::test]
+async fn test_query_thinking_blocks() {
+    // Use thinking_content.ndjson fixture
+    // Verify: init → assistant (thinking + text) → result
+    // Verify: thinking content parsed correctly
+}
 
----
+#[tokio::test]
+async fn test_query_stream_completion() {
+    // Verify stream ends after result message
+    // Verify transport cleanup
+}
 
-### Phase 4: JSON-RPC Routing (120 min)
+#[tokio::test]
+async fn test_query_with_options() {
+    // Test query() with ClaudeAgentOptions
+    // Verify CLI args are passed correctly
+}
+```
 
-#### 4.1 JSON-RPC helpers (~20 min)
-- json_rpc_success()
-- json_rpc_error()
+### Phase 4: ClaudeClient Integration Tests (90 minutes)
 
-#### 4.2-4.5 Handler methods (~80 min)
-- handle_initialize()
-- handle_tools_list()
-- handle_tools_call()
-- handle_jsonrpc() router
+**Test Coverage:**
+```rust
+#[tokio::test]
+async fn test_client_connect_disconnect() {
+    // Create client, connect, verify is_connected(), disconnect
+}
 
-#### 4.6 Tests (~20 min)
-- Test each handler method
-- Test JSON-RPC routing
+#[tokio::test]
+async fn test_client_send_message() {
+    // Connect, send_message(), verify response stream
+}
 
----
+#[tokio::test]
+async fn test_client_multiple_messages() {
+    // (Will fail initially - send_message() takes receiver)
+    // Document limitation or implement fix
+}
 
-### Phase 5: McpMessageHandler Integration (60 min)
+#[tokio::test]
+async fn test_client_interrupt() {
+    // Send control interrupt request
+    // Verify response (using fixture with control_response)
+}
 
-#### 5.1 Server registry (~30 min)
-- SdkMcpServerRegistry struct
-- register(), get() methods
+#[tokio::test]
+async fn test_client_set_model() {
+    // Send set_model request, verify response
+}
 
-#### 5.2 Implement McpMessageHandler (~30 min)
-- Route messages to servers
-- Handle server not found errors
+#[tokio::test]
+async fn test_client_set_permission_mode() {
+    // Send permission mode change, verify response
+}
 
----
+#[tokio::test]
+async fn test_client_handler_registration() {
+    // Register handlers before connect
+    // Verify handlers are invoked (may need fixture with incoming requests)
+}
+```
 
-### Phase 6: Module Integration (30 min)
+**Note:** ClaudeClient tests may require creating additional fixtures with control protocol messages.
 
-#### 6.1 Update lib.rs (~10 min)
-- Replace mcp {} stub with real module
-- Add prelude exports
+### Phase 5: Control Protocol Integration Tests (60 minutes)
 
-#### 6.2 Update options.rs (~20 min)
-- Finalize SdkMcpServer definition
+**Test Coverage:**
+```rust
+#[tokio::test]
+async fn test_control_handshake() {
+    // Verify initialization request/response
+    // Use fixture with system init message
+}
 
----
+#[tokio::test]
+async fn test_control_request_response_matching() {
+    // Send request, verify response has matching request_id
+}
 
-### Phase 7: Comprehensive Tests (120 min)
+#[tokio::test]
+async fn test_control_timeout() {
+    // Send request with short timeout
+    // Verify timeout error
+    // (May need fixture that doesn't send response)
+}
+```
 
-#### 7.1 Unit tests (~60 min)
-- 12 unit tests for all components
+### Phase 6: Hook Integration Tests (60 minutes)
 
-#### 7.2 Integration tests (~60 min)
-- 6 integration tests for full flows
-- Thread safety validation
+**Test Coverage:**
+```rust
+#[tokio::test]
+async fn test_hook_invocation() {
+    // Register hook before connect
+    // Send message that triggers hook
+    // Verify hook callback invoked with correct data
+}
 
-**Target:** 20-30 comprehensive tests
+#[tokio::test]
+async fn test_multiple_hooks() {
+    // Register multiple hooks
+    // Verify all are invoked in order
+}
 
----
+#[tokio::test]
+async fn test_hook_with_control_protocol() {
+    // Verify hook responses are sent via control protocol
+}
+```
 
-### Phase 8: Documentation (60 min)
+**Note:** Hook tests require fixtures with `control_request` messages containing hook invocation data.
 
-#### 8.1 Module-level docs (~20 min)
-- Overview with architecture diagram
-- Quick start example
+### Phase 7: Additional Fixtures (60 minutes)
 
-#### 8.2 API documentation (~30 min)
-- Document all public types
-- Add doctests for key methods
+**New Fixtures Needed:**
+1. `control_interrupt.ndjson` - Control interrupt scenario
+2. `control_set_model.ndjson` - Model change scenario
+3. `hook_invocation.ndjson` - Hook callback scenario
+4. `multi_turn.ndjson` - Multiple user/assistant exchanges
 
-#### 8.3 README example (~10 min)
-- End-to-end usage example
+**Fixture Format Example (control_interrupt.ndjson):**
+```json
+{"type":"system","subtype":"init","session_id":"sess_001","tools":[],"mcp_servers":[]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Starting long task..."}]}}
+{"type":"control_request","request_id":"req_001","request":{"type":"interrupt"}}
+{"type":"control_response","request_id":"req_001","response":{"type":"success","data":{"status":"interrupted"}}}
+{"type":"result","subtype":"success","result":"Task interrupted","duration_ms":500,"num_turns":1,"usage":{"input_tokens":10,"output_tokens":5}}
+```
 
----
+### Phase 8: Verification and Documentation (60 minutes)
 
-### Phase 9: Verification (30 min)
-
-#### 9.1 Test execution (~10 min)
-- cargo test --lib
-- cargo test --doc
-
-#### 9.2 Clippy (~10 min)
-- cargo clippy -- -D warnings
-
-#### 9.3 Documentation check (~10 min)
-- cargo doc --no-deps --open
-
----
+**Tasks:**
+1. Run all integration tests: `cargo test --test integration`
+2. Verify zero regressions: `cargo test --lib`
+3. Run clippy: `cargo clippy --all-targets -- -D warnings`
+4. Document test coverage in `.attractor/test-results.md`
+5. Add README in `tests/` directory explaining integration test structure
+6. Update task documentation
 
 ## Files to Create/Modify
 
-### New Files (1 file, ~800-1000 lines)
+### New Files (4 files, ~800 lines)
 
-**1. `crates/rusty_claw/src/mcp_server.rs`**
-- ToolContent enum (~30 lines)
-- ToolResult struct (~40 lines)
-- ToolHandler trait (~20 lines)
-- SdkMcpTool struct + impl (~100 lines)
-- SdkMcpServerImpl struct + impl (~200 lines)
-- SdkMcpServerRegistry struct + impl (~100 lines)
-- JSON-RPC helpers (~50 lines)
-- Module-level documentation (~80 lines)
-- Tests (~300-400 lines)
+1. **`crates/rusty_claw/tests/mock_cli.rs`** (~200 lines)
+   - Mock CLI binary implementation
+   - Signal handling
+   - NDJSON replay logic
 
-### Modified Files (2 files, ~15 lines total)
+2. **`crates/rusty_claw/tests/integration_test.rs`** (~400 lines)
+   - Test helpers (~150 lines)
+   - query() tests (~100 lines)
+   - ClaudeClient tests (~150 lines)
 
-**2. `crates/rusty_claw/src/lib.rs`** (+5 lines)
-- Replace `pub mod mcp {}` stub with `pub mod mcp_server;`
-- Add mcp_server exports to prelude
+3. **`crates/rusty_claw/tests/control_integration_test.rs`** (~100 lines)
+   - Control Protocol tests
+   - Hook invocation tests
 
-**3. `crates/rusty_claw/src/options.rs`** (~10 lines)
-- Update `SdkMcpServer` struct from placeholder to full definition
-- Add `name` and `version` fields
+4. **`crates/rusty_claw/tests/README.md`** (~100 lines)
+   - Integration test documentation
+   - How to add new tests
+   - How to create fixtures
 
----
+### New Fixtures (4 files)
 
-## Success Criteria
+5. **`crates/rusty_claw/tests/fixtures/control_interrupt.ndjson`**
+6. **`crates/rusty_claw/tests/fixtures/control_set_model.ndjson`**
+7. **`crates/rusty_claw/tests/fixtures/hook_invocation.ndjson`**
+8. **`crates/rusty_claw/tests/fixtures/multi_turn.ndjson`**
 
-### 1. ✅ SdkMcpServer struct with MCP protocol support
-- SdkMcpServerImpl with tool registry
-- JSON-RPC message handling
-- Protocol version support
+### Modified Files (1 file, +15 lines)
 
-### 2. ✅ Tool registry and listing functionality
-- register_tool() method
-- list_tools() method
-- get_tool() lookup
+9. **`crates/rusty_claw/Cargo.toml`**
+   - Add [[bin]] section for mock_cli
+   - Add [[test]] section for integration tests
 
-### 3. ✅ Tool execution via ToolHandler trait
-- ToolHandler trait definition
-- SdkMcpTool::execute() implementation
-- Error propagation
+## Acceptance Criteria Mapping
 
-### 4. ✅ JSON-RPC routing for all MCP methods
-- initialize → server info + capabilities
-- tools/list → tool definitions
-- tools/call → tool execution
-- Method routing via handle_jsonrpc()
+| # | Criterion | Implementation Plan |
+|---|-----------|---------------------|
+| 1 | Create mock_cli.rs binary | Phase 1 - Mock CLI Binary |
+| 2 | Implement NDJSON fixture system | Phase 1 + Phase 7 (additional fixtures) |
+| 3 | Write query() integration tests | Phase 3 - query() tests (5-6 tests) |
+| 4 | Write ClaudeClient lifecycle tests | Phase 4 - ClaudeClient tests (5-6 tests) |
+| 5 | Write control protocol handshake tests | Phase 5 - Control Protocol tests (2-3 tests) |
+| 6 | Write hook invocation tests | Phase 6 - Hook tests (2-3 tests) |
+| 7 | 15-20 integration tests | Total: ~18 tests across all phases |
+| 8 | All tests pass, no regressions | Phase 8 - Verification (cargo test) |
+| 9 | Zero clippy warnings | Phase 8 - Verification (cargo clippy) |
 
-### 5. ✅ Proper error handling and responses
-- JSON-RPC error codes (-32601, -32602, -32603)
-- ClawError propagation
-- ToolResult error flag
+## Technical Considerations
 
-### 6. ✅ Integration with Control Protocol handler
-- SdkMcpServerRegistry implements McpMessageHandler
-- Routes messages to appropriate server
-- Returns JSON-RPC responses
+### Mock CLI vs Real CLI
 
-### 7. ✅ 20-30 comprehensive tests
-- 12 unit tests
-- 6 integration tests
-- Doctests for key methods
-- **Total: ~20-25 tests**
+**Why mock CLI instead of real CLI?**
+- **Deterministic:** Tests produce consistent results
+- **Fast:** No network calls, no model inference
+- **CI/CD friendly:** No API keys or external dependencies
+- **Isolated:** Tests can run in parallel without interference
+- **Error scenarios:** Easy to simulate edge cases and errors
 
-### 8. ✅ Complete documentation with examples
-- Module-level docs with architecture
-- API documentation for all public types
-- Doctests for key methods
-- End-to-end usage example
+### Subprocess Management
 
-### 9. ✅ Zero clippy warnings
-- All code passes clippy -- -D warnings
+**Key Challenges:**
+- Process cleanup (avoid zombies)
+- Signal handling (graceful shutdown)
+- Timeout handling (prevent hanging tests)
+- Broken pipe handling (client disconnect)
 
----
+**Solutions:**
+- Use tokio::process::Command for async process spawning
+- Track Child handles and kill in cleanup
+- Use tokio::time::timeout for test timeouts
+- Handle EPIPE errors gracefully in mock CLI
+
+### NDJSON Streaming
+
+**Requirements:**
+- Each line must be valid JSON
+- Lines must be newline-terminated
+- Stdout must be flushed after each line
+- Messages must arrive in order
+
+**Mock CLI Implementation:**
+```rust
+for line in lines {
+    // Parse to verify valid JSON
+    let json: serde_json::Value = serde_json::from_str(&line)?;
+
+    // Write to stdout with newline
+    println!("{}", line);
+
+    // Flush immediately (critical for streaming)
+    std::io::stdout().flush()?;
+
+    // Simulate realistic delay
+    tokio::time::sleep(Duration::from_millis(20)).await;
+}
+```
+
+### Transport Integration
+
+**Using mock CLI with existing transport:**
+```rust
+// In integration test
+let mock_cli_path = env!("CARGO_BIN_EXE_mock_cli"); // Cargo sets this
+let args = vec![
+    "--fixture=simple_query.ndjson".to_string(),
+    "--output-format=stream-json".to_string(),
+];
+
+let mut transport = SubprocessCLITransport::new(
+    Some(PathBuf::from(mock_cli_path)),
+    args
+);
+
+transport.connect().await?;
+// ... test transport behavior
+```
 
 ## Dependencies & Risks
 
-### Dependencies
+### Dependencies (All Satisfied ✅)
 
-#### External Dependencies ✅
-**All already in Cargo.toml:**
-- tokio - Async runtime
-- async-trait - Async trait support
-- serde + serde_json - Serialization
-- uuid - (Optional) Request tracking
+1. ✅ **rusty_claw-1ke** (Unit tests) - COMPLETE
+   - Message parsing tests provide baseline
+   - Fixtures already created
 
-**No new dependencies needed!**
+2. ✅ **rusty_claw-qrl** (ClaudeClient) - COMPLETE
+   - ClaudeClient implementation exists
+   - Ready for integration testing
 
-#### Internal Dependencies ✅
-- ✅ **rusty_claw-91n** (Control Protocol handler) - **COMPLETED**
-- ✅ Transport layer - Already implemented
-- ✅ Error types - Already implemented
-- ✅ Options types - Already implemented
+3. ✅ **Existing Infrastructure:**
+   - Transport layer (SubprocessCLITransport) - ✅
+   - Control Protocol - ✅
+   - Hook system - ✅
+   - Message types - ✅
+   - Error types - ✅
 
-### Risks & Mitigation
+### Risks & Mitigations
 
-#### 1. JSON-RPC Protocol Compliance
-**Risk:** Incorrect JSON-RPC 2.0 format could break CLI communication
+| Risk | Impact | Probability | Mitigation |
+|------|--------|-------------|------------|
+| Mock CLI behavior differs from real CLI | High | Medium | Reference real CLI output, validate fixture format against spec |
+| Process cleanup failures (zombies) | Medium | Low | Implement Drop handlers, use test cleanup functions |
+| Test timeouts in CI | Medium | Medium | Use generous timeouts (5-10s), skip slow tests if needed |
+| Fixture maintenance burden | Low | Medium | Document fixture format, provide fixture validation tool |
+| Race conditions in async tests | Medium | Low | Use tokio::sync primitives, avoid shared mutable state |
 
-**Mitigation:**
-- Use explicit JSON-RPC helper functions
-- Validate against MCP specification
-- Comprehensive tests for all response formats
+## Success Metrics
 
-#### 2. Tool Handler Thread Safety
-**Risk:** ToolHandler trait must be Send + Sync for concurrent execution
+**Quantitative:**
+- ✅ 15-20 integration tests implemented
+- ✅ 100% integration test pass rate
+- ✅ Zero regressions (184/184 unit tests still pass)
+- ✅ Zero clippy warnings
+- ✅ All 9 acceptance criteria met
 
-**Mitigation:**
-- Enforce Send + Sync bounds in trait definition
-- Use Arc<dyn ToolHandler> for shared ownership
-- Test concurrent execution
+**Qualitative:**
+- ✅ Tests are deterministic (same result every run)
+- ✅ Tests are fast (<5s total runtime)
+- ✅ Test code is maintainable (clear structure, helpers)
+- ✅ Fixtures are reusable (documented format)
+- ✅ Documentation explains integration test approach
 
-#### 3. Error Propagation Layers
-**Risk:** Errors can occur at multiple layers
+## Estimated Timeline
 
-**Mitigation:**
-- Clear error propagation path: ClawError → JSON-RPC error codes
-- Test error cases at each layer
-- Document error handling strategy
+| Phase | Description | Duration |
+|-------|-------------|----------|
+| 1 | Mock CLI Binary | 90 min |
+| 2 | Test Helpers | 60 min |
+| 3 | query() Tests | 90 min |
+| 4 | ClaudeClient Tests | 90 min |
+| 5 | Control Protocol Tests | 60 min |
+| 6 | Hook Tests | 60 min |
+| 7 | Additional Fixtures | 60 min |
+| 8 | Verification & Documentation | 60 min |
+| **Total** | | **570 min (9.5 hours)** |
 
----
+## Example Test Structure
 
-## Implementation Timeline
-
-**Total Estimated Time:** ~9.5 hours
-
-| Phase | Duration | Dependencies |
-|-------|----------|--------------|
-| 1. Core Types | 90 min | None |
-| 2. SdkMcpTool | 60 min | Phase 1 |
-| 3. SdkMcpServer Core | 90 min | Phase 2 |
-| 4. JSON-RPC Routing | 120 min | Phase 3 |
-| 5. Integration | 60 min | Phase 4 |
-| 6. Module Integration | 30 min | Phase 5 |
-| 7. Tests | 120 min | Phase 6 |
-| 8. Documentation | 60 min | Phase 7 |
-| 9. Verification | 30 min | Phase 8 |
-
----
-
-## Downstream Impact
-
-**This task unblocks 2 P2/P3 tasks:**
-
-### 1. rusty_claw-zyo - Implement #[claw_tool] proc macro [P2]
-**Why Blocked:** Proc macro needs SdkMcpTool and ToolHandler trait to generate code
-
-### 2. rusty_claw-bkm - Write examples [P3]
-**Why Blocked:** Examples need working MCP server to demonstrate tool registration
-
----
-
-## Example Usage
+### Integration Test Example (query())
 
 ```rust
-use rusty_claw::prelude::*;
-use async_trait::async_trait;
-use serde_json::{json, Value};
+#[tokio::test]
+async fn test_query_simple() {
+    // Setup: Build mock CLI binary path
+    let mock_cli = env!("CARGO_BIN_EXE_mock_cli");
+    let fixture = fixture_path("simple_query.ndjson");
 
-// Define a tool handler
-struct CalculatorHandler;
+    // Arrange: Create transport with mock CLI
+    let args = vec![
+        format!("--fixture={}", fixture.display()),
+        "--output-format=stream-json".to_string(),
+    ];
+    let mut transport = SubprocessCLITransport::new(
+        Some(PathBuf::from(mock_cli)),
+        args,
+    );
 
-#[async_trait]
-impl ToolHandler for CalculatorHandler {
-    async fn call(&self, args: Value) -> Result<ToolResult, ClawError> {
-        let a = args["a"].as_f64().unwrap_or(0.0);
-        let b = args["b"].as_f64().unwrap_or(0.0);
-        let result = a + b;
-        Ok(ToolResult::text(format!("Result: {}", result)))
+    // Act: Connect and call query()
+    transport.connect().await.unwrap();
+    let mut stream = query("test prompt", None).await.unwrap();
+
+    // Assert: Verify message sequence
+    let mut messages = vec![];
+    while let Some(msg) = stream.next().await {
+        messages.push(msg.unwrap());
+    }
+
+    assert_eq!(messages.len(), 3); // init, assistant, result
+    assert!(matches!(messages[0], Message::System(_)));
+    assert!(matches!(messages[1], Message::Assistant(_)));
+    assert!(matches!(messages[2], Message::Result(_)));
+
+    // Verify result status
+    if let Message::Result(result) = &messages[2] {
+        assert_eq!(result.subtype, Some("success".to_string()));
     }
 }
-
-// Create a tool
-let tool = SdkMcpTool::new(
-    "add",
-    "Add two numbers",
-    json!({
-        "type": "object",
-        "properties": {
-            "a": { "type": "number" },
-            "b": { "type": "number" }
-        },
-        "required": ["a", "b"]
-    }),
-    Arc::new(CalculatorHandler),
-);
-
-// Create and register server
-let mut server = SdkMcpServerImpl::new("calculator", "1.0.0");
-server.register_tool(tool);
-
-// Register with registry
-let mut registry = SdkMcpServerRegistry::new();
-registry.register(server);
-
-// Register as McpMessageHandler
-control_protocol
-    .handlers()
-    .await
-    .register_mcp_message(Arc::new(registry));
 ```
 
----
+## Next Steps
 
-## Investigation Complete ✅
-
-**Status:** Ready to begin **Phase 1: Core Types**
-
-**Next Steps:**
-1. Create `crates/rusty_claw/src/mcp_server.rs`
-2. Implement ToolContent enum
-3. Implement ToolResult struct
-4. Implement ToolHandler trait
-5. Write initial tests
-
-**Estimated Completion:** Phase 1 complete in ~90 minutes
+1. ✅ Investigation complete
+2. ⏭️ **Phase 1:** Implement mock CLI binary
+3. ⏭️ **Phase 2:** Create integration test helpers
+4. ⏭️ **Phase 3-6:** Implement test suites
+5. ⏭️ **Phase 7:** Create additional fixtures
+6. ⏭️ **Phase 8:** Verify and document
+7. ⏭️ Commit and close task
 
 ---
 
-*Investigation conducted: 2026-02-13*
-*Ready for implementation: ✅*
+**Investigation Status:** ✅ COMPLETE
+**Ready to Proceed:** YES
+**Blockers:** NONE

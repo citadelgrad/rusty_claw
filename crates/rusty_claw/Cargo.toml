@@ -31,5 +31,17 @@ rusty_claw_macros = { path = "../rusty_claw_macros" }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 
+# Mock CLI binary for integration tests
+[[bin]]
+name = "mock_cli"
+path = "tests/mock_cli.rs"
+test = false
+
+# Integration test suite
+[[test]]
+name = "integration"
+path = "tests/integration_test.rs"
+harness = true
+
 [features]
 default = []
