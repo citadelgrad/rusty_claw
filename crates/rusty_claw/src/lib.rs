@@ -41,9 +41,7 @@ pub use rusty_claw_macros::*;
 // Module structure - to be implemented in future tasks
 
 /// Low-level transport layer for JSONL communication over stdio
-pub mod transport {
-    //! Transport implementation will be added in future tasks
-}
+pub mod transport;
 
 /// Claude Control Protocol (CCP) implementation
 pub mod control {
@@ -77,4 +75,5 @@ pub mod prelude {
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
+    pub use crate::transport::{SubprocessCLITransport, Transport};
 }

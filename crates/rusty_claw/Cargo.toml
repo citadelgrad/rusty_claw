@@ -21,6 +21,9 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true }
+
 # Re-export macros from the proc-macro crate
 rusty_claw_macros = { path = "../rusty_claw_macros" }
 
