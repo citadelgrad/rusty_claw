@@ -1,26 +1,24 @@
-# Current Task: rusty_claw-bkm
+# Current Task: rusty_claw-5uw
 
 ## Task ID
-rusty_claw-bkm
+rusty_claw-5uw
 
 ## Status
 IN_PROGRESS
 
 ## Title
-Write examples
+Documentation and crates.io prep
 
 ## Priority
 P3
 
 ## Description
-Create examples: simple_query.rs, interactive_client.rs, custom_tool.rs, and hooks_guardrails.rs demonstrating core SDK usage patterns.
+Add rustdoc comments to all public APIs, write top-level crate docs with usage examples, add README, LICENSE, and prepare Cargo.toml metadata for crates.io publishing.
 
-## Dependencies
-- rusty_claw-qrl: Implement ClaudeClient for interactive sessions [CLOSED ✓]
-- rusty_claw-tlh: Implement SDK MCP Server bridge [CLOSED ✓]
-
-## Blocks
-- rusty_claw-5uw: Documentation and crates.io prep [OPEN]
+## Dependencies (All Satisfied ✅)
+- ✅ rusty_claw-zyo: Implement #[claw_tool] proc macro [CLOSED]
+- ✅ rusty_claw-b4s: Implement subagent support [CLOSED]
+- ✅ rusty_claw-bkm: Write examples [CLOSED]
 
 ## Type
 task
@@ -33,15 +31,21 @@ task
 
 ## Acceptance Criteria
 
-Create 4 working examples that demonstrate:
-1. **simple_query.rs** - Basic SDK usage with simple queries
-2. **interactive_client.rs** - Interactive multi-turn conversations using ClaudeClient
-3. **custom_tool.rs** - Implementing and registering custom tools
-4. **hooks_guardrails.rs** - Using hooks for guardrails and monitoring
+1. **Rustdoc comments** - Add comprehensive rustdoc comments to all public APIs
+2. **Crate-level documentation** - Write top-level docs with usage examples in lib.rs
+3. **README.md** - Create README with overview, installation, quick start, examples
+4. **LICENSE** - Add appropriate license file (likely MIT or Apache-2.0)
+5. **Cargo.toml metadata** - Prepare metadata for crates.io publishing:
+   - description
+   - documentation URL
+   - repository URL
+   - homepage URL
+   - keywords
+   - categories
 
-Each example should:
-- Be self-contained and runnable
-- Include comprehensive comments
-- Demonstrate best practices
-- Compile without warnings
-- Pass clippy linting
+## What Unblocks
+
+This is the final core task before the epic can be completed:
+- Completes all documentation requirements
+- Prepares for crates.io publication
+- Makes the SDK production-ready for public use

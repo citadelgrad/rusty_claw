@@ -10,8 +10,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 authors = ["rusty_claw contributors"]
-repository = "https://github.com/anthropics/rusty_claw"
-homepage = "https://github.com/anthropics/rusty_claw"
+repository = "https://github.com/citadelgrad/rusty_claw"
+homepage = "https://github.com/citadelgrad/rusty_claw"
 documentation = "https://docs.rs/rusty_claw"
 
 [workspace.dependencies]
