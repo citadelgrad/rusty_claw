@@ -1,0 +1,63 @@
+crates/rusty_claw/tests/integration_test.rs
+  08656bad81acae03 1-354
+crates/rusty_claw/tests/README.md
+  08656bad81acae03 1-233
+.attractor/investigation.md
+  6ca11c4dabf7d23a 1,3-4,10,14-82,85-86,88-101,104-118,121,123-167,172,174-175,177-183,185-190,192,194-195,197-200,202-203,205-207,209-210,212-214,216,218-225,227-232,234-239,241-246,248-252,254-259,261,263-268,270-273,275-279,281-285,287-290,292-295,297-302,304,306,308-314,316-319,321-327,329,331-338,340-344,346-350,352,354,356-360,362-369,371,373-379,383,385-388,390-393,395-397,399-402,404,406-409,411,413-415,417,419-429,431,433,435-440,442,444-448,450-454,456,458-462,464-468,470-471,473-474,476-479,481,483-495,497-499,503-562,565-588,591-594,596-600,603,605-611,615-617
+.attractor/integration-test-summary.md
+  08656bad81acae03 1-178
+crates/rusty_claw/tests/mock_cli.rs
+  08656bad81acae03 1-193
+.attractor/current_task.md
+  6ca11c4dabf7d23a 39,41,43-48,50-55,57-58,62-71
+  4d0df295160e06a9 1,3-8,12,14,16-17,19,21-22,31,33,35,37,60
+  08656bad81acae03 23-29
+crates/rusty_claw/Cargo.toml
+  08656bad81acae03 34-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "60e39d6838f94ea3fdd2264714c4f5b101e271c5",
+  "prompts": {
+    "08656bad81acae03": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aecf62d5-501c-4e1b-91cd-8fac32b9ecd4",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 1497,
+      "total_deletions": 527,
+      "accepted_lines": 977,
+      "overriden_lines": 0
+    },
+    "4d0df295160e06a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "488c92ad-6073-4704-91ba-46d8fc263826",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 33,
+      "total_deletions": 103,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "6ca11c4dabf7d23a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "005eec9b-4230-4bd4-986b-bbaa9f43af28",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 569,
+      "total_deletions": 505,
+      "accepted_lines": 568,
+      "overriden_lines": 0
+    }
+  }
+}
