@@ -1,147 +1,270 @@
-# Investigation: Set up workspace and crate structure
+# Investigation: Define error hierarchy (rusty_claw-9pf)
 
-**Task ID:** rusty_claw-eia
+**Date:** 2026-02-13
+**Task ID:** rusty_claw-9pf
 **Status:** IN_PROGRESS
-**Date:** 2026-02-12
+**Priority:** P1 (Critical path)
 
-## Summary
+---
 
-Need to create a Cargo workspace with two crates:
-1. `rusty_claw` - main library crate
-2. `rusty_claw_macros` - proc-macro crate for `#[claw_tool]` attribute
+## Task Overview
+
+Implement the complete error hierarchy for the rusty_claw SDK using `thiserror`. This is a critical foundational task that blocks three major implementation tasks:
+- rusty_claw-6cn: Transport trait needs `ClawError` for all method signatures
+- rusty_claw-pwc: Message parsing needs `MessageParse` variant
+- rusty_claw-k71: CLI discovery needs `CliNotFound` and `Process` variants
 
 ## Current State
 
-The project directory exists at `/Volumes/qwiizlab/projects/rusty_claw` with:
-- Documentation: `docs/PRD.md` and `docs/SPEC.md`
-- Agent instructions: `AGENTS.md`
-- Beads issue tracking: `.beads/`
-- Git repository initialized
-- **No Rust code or Cargo files yet** - this is a greenfield setup
+### Existing Code
 
-## Files to Create
+**File:** `crates/rusty_claw/src/lib.rs:64-66`
+```rust
+/// Error types and utilities
+pub mod error {
+    //! Error hierarchy will be added in future tasks
+}
+```
 
-### 1. Workspace Root
-- **`/Volumes/qwiizlab/projects/rusty_claw/Cargo.toml`** - Workspace definition
+The error module exists but is currently empty. The module is properly declared and documented in the public API.
 
-### 2. Main Library Crate
-- **`/Volumes/qwiizlab/projects/rusty_claw/crates/rusty_claw/Cargo.toml`** - Library crate manifest
-- **`/Volumes/qwiizlab/projects/rusty_claw/crates/rusty_claw/src/lib.rs`** - Initial library entry point
+**Dependencies:** `thiserror` is already added to `Cargo.toml` (line 19) via workspace inheritance.
 
-### 3. Proc Macro Crate
-- **`/Volumes/qwiizlab/projects/rusty_claw/crates/rusty_claw_macros/Cargo.toml`** - Proc macro crate manifest
-- **`/Volumes/qwiizlab/projects/rusty_claw/crates/rusty_claw_macros/src/lib.rs`** - Proc macro entry point
+### Specification Reference
 
-### 4. Additional Files
-- **`.gitignore`** - Already exists but may need Rust-specific entries added
-- **`README.md`** - Project overview (not strictly required for this task)
+From `docs/SPEC.md:664-703`, the complete error enum is defined with 9 variants:
+
+```rust
+#[derive(Error, Debug)]
+pub enum ClawError {
+    #[error("Claude Code CLI not found. Install it or set cli_path.")]
+    CliNotFound,
+
+    #[error("Failed to connect to Claude Code CLI: {0}")]
+    Connection(String),
+
+    #[error("CLI process exited with code {code}: {stderr}")]
+    Process {
+        code: i32,
+        stderr: String,
+    },
+
+    #[error("Failed to parse JSON from CLI: {0}")]
+    JsonDecode(#[from] serde_json::Error),
+
+    #[error("Failed to parse message: {reason}")]
+    MessageParse {
+        reason: String,
+        raw: String,
+    },
+
+    #[error("Control protocol timeout waiting for {subtype}")]
+    ControlTimeout {
+        subtype: String,
+    },
+
+    #[error("Control protocol error: {0}")]
+    ControlError(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Tool execution failed: {0}")]
+    ToolExecution(String),
+}
+```
 
 ## Required Changes
 
-### 1. Workspace Cargo.toml
+### File to Modify
 
-Create a workspace manifest that:
-- Declares members: `crates/rusty_claw` and `crates/rusty_claw_macros`
-- Sets workspace-level metadata (edition, license, authors)
-- Optionally defines shared dependencies via `[workspace.dependencies]`
+**Path:** `crates/rusty_claw/src/error.rs` (new file to create)
 
-### 2. rusty_claw Library Crate
+**Reason:** Rust convention is to implement module contents in separate files when they contain substantial code. The empty `pub mod error { }` in `lib.rs` will automatically look for `error.rs` in the `src/` directory.
 
-According to SPEC.md section 11, need these core dependencies:
-- `tokio` (^1.35, features: `full`) - async runtime
-- `serde` (^1, features: `derive`) - serialization
-- `serde_json` (^1) - JSON parsing
-- `thiserror` (^2) - error macros
-- `uuid` (^1, features: `v4`) - request IDs
-- `tokio-stream` (^0.1) - stream utilities
-- `tracing` (^0.1) - logging
-- `async-trait` (^0.1) - async traits
+### Implementation Requirements
 
-Crate configuration:
-- `edition = "2021"` (Rust 2021 edition)
-- `name = "rusty_claw"`
-- `version = "0.1.0"` (per PRD section 12)
-- `license = "MIT"`
+1. **Create `error.rs` file** with:
+   - Import statement: `use thiserror::Error;`
+   - Complete `ClawError` enum with all 9 variants
+   - Proper `thiserror` attributes for each variant
+   - Comprehensive documentation
 
-### 3. rusty_claw_macros Proc Macro Crate
+2. **Update `lib.rs`**:
+   - Remove the empty inline module at line 64-66
+   - Replace with: `pub mod error;` (which will import from `error.rs`)
+   - Add re-export in `prelude` module for convenience
 
-Proc macro dependencies (SPEC section 11.1):
-- `syn` (^2, features: `full`) - Rust syntax parsing
-- `quote` (^1) - code generation
-- `proc-macro2` (^1) - proc macro utilities
+3. **Error Variant Analysis**:
 
-Crate configuration:
-- `edition = "2021"`
-- `name = "rusty_claw_macros"`
-- `version = "0.1.0"`
-- `license = "MIT"`
-- **CRITICAL:** `proc-macro = true` in `[lib]` section
+   | Variant | Type | Purpose | Auto-conversion |
+   |---------|------|---------|-----------------|
+   | `CliNotFound` | Unit | CLI binary not found during discovery | No |
+   | `Connection(String)` | Tuple | Transport connection failures | No |
+   | `Process { code, stderr }` | Struct | CLI process crashes or non-zero exits | No |
+   | `JsonDecode` | From | JSONL parsing errors | Yes (from serde_json::Error) |
+   | `MessageParse { reason, raw }` | Struct | Malformed control protocol messages | No |
+   | `ControlTimeout { subtype }` | Struct | Control protocol request timeouts | No |
+   | `ControlError(String)` | Tuple | Control protocol semantic errors | No |
+   | `Io` | From | Filesystem and I/O operations | Yes (from std::io::Error) |
+   | `ToolExecution(String)` | Tuple | MCP tool handler failures | No |
 
-### 4. Initial Source Files
+4. **Special Considerations**:
+   - Two variants use `#[from]` attribute for automatic conversion:
+     - `JsonDecode` from `serde_json::Error`
+     - `Io` from `std::io::Error`
+   - This enables `?` operator to automatically convert these errors
+   - All error messages follow clear, actionable format
 
-**rusty_claw/src/lib.rs:**
-- Basic module structure with placeholder comments
-- Re-export key types (to be implemented later)
-- Documentation comments referencing the MIT-licensed Python SDK
+## Dependencies
 
-**rusty_claw_macros/src/lib.rs:**
-- Placeholder proc macro stub
-- Will be implemented in future tasks
+### Satisfied
+- ✅ `thiserror` crate is available (workspace dependency)
+- ✅ Workspace structure is set up (rusty_claw-eia completed)
+- ✅ Module structure defined in `lib.rs`
 
-### 5. .gitignore Updates
+### None Required
+This task is purely additive and has no external blockers.
 
-Add Rust-specific entries:
-```
-/target/
-**/*.rs.bk
-*.pdb
-Cargo.lock  # For library crates (keep for binary crates)
-```
+## Risks
 
-**Note:** `.gitignore` already exists with basic entries - need to verify it includes Rust patterns.
+### Low Risk Factors
 
-## Risks & Dependencies
+1. **API Stability**: Error enum is well-specified in SPEC.md and follows standard Rust patterns
+2. **Backwards Compatibility**: This is the initial implementation, no existing API to maintain
+3. **Testing**: Error types can be unit tested in isolation without complex setup
 
-### Risks
-1. **None significant** - this is a straightforward workspace setup
-2. Cargo version compatibility - using modern Cargo features (workspace inheritance) requires Cargo 1.64+
-3. Proc macro crate must have `proc-macro = true` or it won't work
+### Potential Issues
 
-### Dependencies
-- **Blocks:** rusty_claw-9pf (Define error hierarchy) - error types will go in this workspace
-- **Requires:** Cargo installed locally (assumed to be present)
-- **No code dependencies yet** - this is the foundation task
+1. **Error Message Quality**: Messages should be:
+   - Clear for users
+   - Actionable (suggest remediation)
+   - Consistent in tone
+   - Free of implementation details
+
+   **Mitigation**: Follow the exact messages from SPEC.md which have been designed for clarity
+
+2. **Future Error Variants**: May need to add more variants as features are implemented
+
+   **Mitigation**: Rust's exhaustive pattern matching will catch any missing cases during implementation of dependent modules
 
 ## Implementation Strategy
 
-1. Create directory structure: `crates/rusty_claw/src/` and `crates/rusty_claw_macros/src/`
-2. Write workspace `Cargo.toml`
-3. Write `rusty_claw/Cargo.toml` with all dependencies from SPEC
-4. Write `rusty_claw_macros/Cargo.toml` with proc macro deps
-5. Write minimal `lib.rs` files for both crates
-6. Update `.gitignore` if needed
-7. Run `cargo check` to verify workspace builds
-8. Run `cargo tree` to verify dependency resolution
-9. Commit changes
+### Step 1: Create error.rs
+- Copy the complete error enum from SPEC.md
+- Add module-level documentation
+- Include usage examples in doc comments
 
-## Verification Steps
+### Step 2: Update lib.rs
+- Replace inline `error` module with file-based module
+- Verify module is public and properly exported
 
-After implementation:
-- [ ] `cargo check` succeeds
-- [ ] `cargo build` succeeds
-- [ ] `cargo tree` shows correct dependency graph
-- [ ] Both crates appear in `cargo metadata` output
-- [ ] Workspace structure matches SPEC.md section 1.2
+### Step 3: Update prelude
+- Add `pub use crate::error::ClawError;` to prelude module
+- This enables `use rusty_claw::prelude::*;` to include error types
 
-## Notes
+### Step 4: Verification
+- Run `cargo check` to verify compilation
+- Run `cargo clippy` to ensure code quality
+- Run `cargo doc` to verify documentation renders correctly
+- Verify the error can be constructed and displayed:
+  ```rust
+  let err = ClawError::CliNotFound;
+  assert_eq!(err.to_string(), "Claude Code CLI not found. Install it or set cli_path.");
+  ```
 
-- Using Rust 2021 edition (requires rustc >= 1.56.0, SPEC requires 1.75+ for async traits)
-- Proc macro crate follows standard naming convention (`<crate>_macros`)
-- License is MIT, crediting Anthropic's Python SDK as architectural reference (per PRD 2.2)
-- Version 0.1.0 aligns with PRD "Foundation" phase (section 12)
+## Blocks Downstream Tasks
 
-## References
+This task unblocks three critical P1/P2 tasks:
 
-- **PRD.md:** Section 2 (Licensing), Section 3.1 (P0 Requirements), Section 12 (Release Plan)
-- **SPEC.md:** Section 1.2 (Crate Structure), Section 11 (Dependencies), Section 13.1 (Rust Considerations)
-- **Reference Implementation:** [claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python) (MIT License)
+1. **rusty_claw-6cn** [P1]: Transport trait needs `ClawError` for all method signatures
+2. **rusty_claw-pwc** [P1]: Message parsing needs `MessageParse` variant
+3. **rusty_claw-k71** [P2]: CLI discovery needs `CliNotFound` and `Process` variants
+
+None of these tasks can proceed without the complete error hierarchy in place.
+
+## Testing Strategy
+
+### Unit Tests to Add
+
+Create tests in `crates/rusty_claw/src/error.rs`:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_not_found_message() {
+        let err = ClawError::CliNotFound;
+        assert_eq!(
+            err.to_string(),
+            "Claude Code CLI not found. Install it or set cli_path."
+        );
+    }
+
+    #[test]
+    fn test_connection_error_message() {
+        let err = ClawError::Connection("timeout".to_string());
+        assert_eq!(err.to_string(), "Failed to connect to Claude Code CLI: timeout");
+    }
+
+    #[test]
+    fn test_process_error_message() {
+        let err = ClawError::Process {
+            code: 1,
+            stderr: "permission denied".to_string(),
+        };
+        assert!(err.to_string().contains("code 1"));
+        assert!(err.to_string().contains("permission denied"));
+    }
+
+    #[test]
+    fn test_io_error_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let claw_err: ClawError = io_err.into();
+        assert!(claw_err.to_string().contains("file not found"));
+    }
+
+    #[test]
+    fn test_json_error_conversion() {
+        let json_str = "{ invalid json }";
+        let json_err = serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
+        let claw_err: ClawError = json_err.into();
+        assert!(claw_err.to_string().contains("parse"));
+    }
+}
+```
+
+### Verification Checklist
+
+- [ ] `cargo check` passes
+- [ ] `cargo clippy` has no warnings
+- [ ] `cargo test` passes (all unit tests)
+- [ ] `cargo doc` generates clean documentation
+- [ ] Error messages match SPEC.md exactly
+- [ ] All 9 variants are implemented
+- [ ] Both `#[from]` conversions work correctly
+- [ ] Module is properly exported in lib.rs
+- [ ] ClawError is available in prelude
+
+## Success Criteria
+
+1. ✅ All 9 error variants implemented exactly as specified
+2. ✅ Unit tests verify error message formatting
+3. ✅ Automatic conversion from `std::io::Error` works
+4. ✅ Automatic conversion from `serde_json::Error` works
+5. ✅ Module is properly exported and documented
+6. ✅ No compiler warnings or clippy issues
+7. ✅ Documentation renders correctly in `cargo doc`
+8. ✅ Error type is available via prelude import
+
+---
+
+## Next Steps After Completion
+
+1. Mark rusty_claw-9pf as closed
+2. Unblocks rusty_claw-6cn (Transport trait implementation)
+3. Unblocks rusty_claw-pwc (Shared types and message structs)
+4. Unblocks rusty_claw-k71 (CLI discovery)
+5. Update `.attractor/current_task.md` with next task from pipeline

@@ -61,13 +61,13 @@ pub mod hooks {
 }
 
 /// Error types and utilities
-pub mod error {
-    //! Error hierarchy will be added in future tasks
-}
+pub mod error;
 
 // Prelude module for common imports
 pub mod prelude {
     //! Common imports for rusty_claw users
     //!
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
+
+    pub use crate::error::ClawError;
 }
