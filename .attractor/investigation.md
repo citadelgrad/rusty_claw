@@ -1,270 +1,325 @@
-# Investigation: Define error hierarchy (rusty_claw-9pf)
+# Investigation: rusty_claw-pwc - Define shared types and message structs
 
 **Date:** 2026-02-13
-**Task ID:** rusty_claw-9pf
+**Task ID:** rusty_claw-pwc
+**Priority:** P1 (Critical)
 **Status:** IN_PROGRESS
-**Priority:** P1 (Critical path)
-
----
 
 ## Task Overview
 
-Implement the complete error hierarchy for the rusty_claw SDK using `thiserror`. This is a critical foundational task that blocks three major implementation tasks:
-- rusty_claw-6cn: Transport trait needs `ClawError` for all method signatures
-- rusty_claw-pwc: Message parsing needs `MessageParse` variant
-- rusty_claw-k71: CLI discovery needs `CliNotFound` and `Process` variants
+Implement shared message types and structures that will be used throughout the SDK for parsing and handling messages from the Claude Code CLI.
+
+**Key Types to Implement:**
+1. Message enum (System, Assistant, User, Result)
+2. ContentBlock enum (Text, ToolUse, ToolResult, Thinking)
+3. SystemMessage, AssistantMessage, ResultMessage structs
+4. StreamEvent struct
+5. Supporting types: UsageInfo, ToolInfo, McpServerInfo, ApiMessage, UserMessage
 
 ## Current State
 
-### Existing Code
+### Existing Files:
+- `crates/rusty_claw/src/lib.rs` - Main library file with placeholder modules
+- `crates/rusty_claw/src/error.rs` - Complete error hierarchy (✓ rusty_claw-9pf)
 
-**File:** `crates/rusty_claw/src/lib.rs:64-66`
-```rust
-/// Error types and utilities
-pub mod error {
-    //! Error hierarchy will be added in future tasks
-}
-```
-
-The error module exists but is currently empty. The module is properly declared and documented in the public API.
-
-**Dependencies:** `thiserror` is already added to `Cargo.toml` (line 19) via workspace inheritance.
-
-### Specification Reference
-
-From `docs/SPEC.md:664-703`, the complete error enum is defined with 9 variants:
-
-```rust
-#[derive(Error, Debug)]
-pub enum ClawError {
-    #[error("Claude Code CLI not found. Install it or set cli_path.")]
-    CliNotFound,
-
-    #[error("Failed to connect to Claude Code CLI: {0}")]
-    Connection(String),
-
-    #[error("CLI process exited with code {code}: {stderr}")]
-    Process {
-        code: i32,
-        stderr: String,
-    },
-
-    #[error("Failed to parse JSON from CLI: {0}")]
-    JsonDecode(#[from] serde_json::Error),
-
-    #[error("Failed to parse message: {reason}")]
-    MessageParse {
-        reason: String,
-        raw: String,
-    },
-
-    #[error("Control protocol timeout waiting for {subtype}")]
-    ControlTimeout {
-        subtype: String,
-    },
-
-    #[error("Control protocol error: {0}")]
-    ControlError(String),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Tool execution failed: {0}")]
-    ToolExecution(String),
-}
-```
+### Missing:
+- No `messages.rs` module exists yet
+- No message type definitions
 
 ## Required Changes
 
-### File to Modify
+### 1. Create New File: `crates/rusty_claw/src/messages.rs`
 
-**Path:** `crates/rusty_claw/src/error.rs` (new file to create)
+This file will contain all message type definitions as specified in `docs/SPEC.md:173-273`.
 
-**Reason:** Rust convention is to implement module contents in separate files when they contain substantial code. The empty `pub mod error { }` in `lib.rs` will automatically look for `error.rs` in the `src/` directory.
+#### Core Message Types (from SPEC.md:177-260):
 
-### Implementation Requirements
-
-1. **Create `error.rs` file** with:
-   - Import statement: `use thiserror::Error;`
-   - Complete `ClawError` enum with all 9 variants
-   - Proper `thiserror` attributes for each variant
-   - Comprehensive documentation
-
-2. **Update `lib.rs`**:
-   - Remove the empty inline module at line 64-66
-   - Replace with: `pub mod error;` (which will import from `error.rs`)
-   - Add re-export in `prelude` module for convenience
-
-3. **Error Variant Analysis**:
-
-   | Variant | Type | Purpose | Auto-conversion |
-   |---------|------|---------|-----------------|
-   | `CliNotFound` | Unit | CLI binary not found during discovery | No |
-   | `Connection(String)` | Tuple | Transport connection failures | No |
-   | `Process { code, stderr }` | Struct | CLI process crashes or non-zero exits | No |
-   | `JsonDecode` | From | JSONL parsing errors | Yes (from serde_json::Error) |
-   | `MessageParse { reason, raw }` | Struct | Malformed control protocol messages | No |
-   | `ControlTimeout { subtype }` | Struct | Control protocol request timeouts | No |
-   | `ControlError(String)` | Tuple | Control protocol semantic errors | No |
-   | `Io` | From | Filesystem and I/O operations | Yes (from std::io::Error) |
-   | `ToolExecution(String)` | Tuple | MCP tool handler failures | No |
-
-4. **Special Considerations**:
-   - Two variants use `#[from]` attribute for automatic conversion:
-     - `JsonDecode` from `serde_json::Error`
-     - `Io` from `std::io::Error`
-   - This enables `?` operator to automatically convert these errors
-   - All error messages follow clear, actionable format
-
-## Dependencies
-
-### Satisfied
-- ✅ `thiserror` crate is available (workspace dependency)
-- ✅ Workspace structure is set up (rusty_claw-eia completed)
-- ✅ Module structure defined in `lib.rs`
-
-### None Required
-This task is purely additive and has no external blockers.
-
-## Risks
-
-### Low Risk Factors
-
-1. **API Stability**: Error enum is well-specified in SPEC.md and follows standard Rust patterns
-2. **Backwards Compatibility**: This is the initial implementation, no existing API to maintain
-3. **Testing**: Error types can be unit tested in isolation without complex setup
-
-### Potential Issues
-
-1. **Error Message Quality**: Messages should be:
-   - Clear for users
-   - Actionable (suggest remediation)
-   - Consistent in tone
-   - Free of implementation details
-
-   **Mitigation**: Follow the exact messages from SPEC.md which have been designed for clarity
-
-2. **Future Error Variants**: May need to add more variants as features are implemented
-
-   **Mitigation**: Rust's exhaustive pattern matching will catch any missing cases during implementation of dependent modules
-
-## Implementation Strategy
-
-### Step 1: Create error.rs
-- Copy the complete error enum from SPEC.md
-- Add module-level documentation
-- Include usage examples in doc comments
-
-### Step 2: Update lib.rs
-- Replace inline `error` module with file-based module
-- Verify module is public and properly exported
-
-### Step 3: Update prelude
-- Add `pub use crate::error::ClawError;` to prelude module
-- This enables `use rusty_claw::prelude::*;` to include error types
-
-### Step 4: Verification
-- Run `cargo check` to verify compilation
-- Run `cargo clippy` to ensure code quality
-- Run `cargo doc` to verify documentation renders correctly
-- Verify the error can be constructed and displayed:
-  ```rust
-  let err = ClawError::CliNotFound;
-  assert_eq!(err.to_string(), "Claude Code CLI not found. Install it or set cli_path.");
-  ```
-
-## Blocks Downstream Tasks
-
-This task unblocks three critical P1/P2 tasks:
-
-1. **rusty_claw-6cn** [P1]: Transport trait needs `ClawError` for all method signatures
-2. **rusty_claw-pwc** [P1]: Message parsing needs `MessageParse` variant
-3. **rusty_claw-k71** [P2]: CLI discovery needs `CliNotFound` and `Process` variants
-
-None of these tasks can proceed without the complete error hierarchy in place.
-
-## Testing Strategy
-
-### Unit Tests to Add
-
-Create tests in `crates/rusty_claw/src/error.rs`:
-
+**Message Enum** (tagged on `type` field):
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cli_not_found_message() {
-        let err = ClawError::CliNotFound;
-        assert_eq!(
-            err.to_string(),
-            "Claude Code CLI not found. Install it or set cli_path."
-        );
-    }
-
-    #[test]
-    fn test_connection_error_message() {
-        let err = ClawError::Connection("timeout".to_string());
-        assert_eq!(err.to_string(), "Failed to connect to Claude Code CLI: timeout");
-    }
-
-    #[test]
-    fn test_process_error_message() {
-        let err = ClawError::Process {
-            code: 1,
-            stderr: "permission denied".to_string(),
-        };
-        assert!(err.to_string().contains("code 1"));
-        assert!(err.to_string().contains("permission denied"));
-    }
-
-    #[test]
-    fn test_io_error_conversion() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let claw_err: ClawError = io_err.into();
-        assert!(claw_err.to_string().contains("file not found"));
-    }
-
-    #[test]
-    fn test_json_error_conversion() {
-        let json_str = "{ invalid json }";
-        let json_err = serde_json::from_str::<serde_json::Value>(json_str).unwrap_err();
-        let claw_err: ClawError = json_err.into();
-        assert!(claw_err.to_string().contains("parse"));
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Message {
+    System(SystemMessage),
+    Assistant(AssistantMessage),
+    User(UserMessage),
+    Result(ResultMessage),
 }
 ```
 
-### Verification Checklist
+**SystemMessage** (tagged on `subtype` field):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum SystemMessage {
+    Init {
+        session_id: String,
+        tools: Vec<ToolInfo>,
+        mcp_servers: Vec<McpServerInfo>,
+        #[serde(flatten)]
+        extra: serde_json::Value,
+    },
+    CompactBoundary,
+}
+```
 
-- [ ] `cargo check` passes
-- [ ] `cargo clippy` has no warnings
-- [ ] `cargo test` passes (all unit tests)
-- [ ] `cargo doc` generates clean documentation
-- [ ] Error messages match SPEC.md exactly
-- [ ] All 9 variants are implemented
-- [ ] Both `#[from]` conversions work correctly
-- [ ] Module is properly exported in lib.rs
-- [ ] ClawError is available in prelude
+**AssistantMessage**:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantMessage {
+    pub message: ApiMessage,
+    #[serde(default)]
+    pub parent_tool_use_id: Option<String>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+}
+```
 
-## Success Criteria
+**ContentBlock** (tagged on `type` field):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: serde_json::Value,
+        #[serde(default)]
+        is_error: bool,
+    },
+    Thinking {
+        thinking: String,
+    },
+}
+```
 
-1. ✅ All 9 error variants implemented exactly as specified
-2. ✅ Unit tests verify error message formatting
-3. ✅ Automatic conversion from `std::io::Error` works
-4. ✅ Automatic conversion from `serde_json::Error` works
-5. ✅ Module is properly exported and documented
-6. ✅ No compiler warnings or clippy issues
-7. ✅ Documentation renders correctly in `cargo doc`
-8. ✅ Error type is available via prelude import
+**ResultMessage** (tagged on `subtype` field):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum ResultMessage {
+    Success {
+        result: String,
+        #[serde(default)]
+        duration_ms: Option<u64>,
+        #[serde(default)]
+        num_turns: Option<u32>,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        total_cost_usd: Option<f64>,
+        #[serde(default)]
+        usage: Option<UsageInfo>,
+    },
+    Error {
+        error: String,
+        #[serde(flatten)]
+        extra: serde_json::Value,
+    },
+    InputRequired,
+}
+```
 
----
+**StreamEvent** (SPEC.md:267-273):
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamEvent {
+    pub event_type: String,
+    pub data: serde_json::Value,
+}
+```
+
+#### Supporting Types (inferred from usage):
+
+**ApiMessage** - Anthropic Messages API message structure:
+```rust
+/// A message in the Anthropic Messages API format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiMessage {
+    pub role: String,  // "assistant", "user"
+    pub content: Vec<ContentBlock>,
+}
+```
+
+**UserMessage** - User input message:
+```rust
+/// A user message (currently not detailed in SPEC, placeholder)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserMessage {
+    pub message: ApiMessage,
+}
+```
+
+**UsageInfo** - Token usage information:
+```rust
+/// Token usage information from the API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageInfo {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+```
+
+**ToolInfo** - Tool definition from init message:
+```rust
+/// Information about an available tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolInfo {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub input_schema: Option<serde_json::Value>,
+}
+```
+
+**McpServerInfo** - MCP server information:
+```rust
+/// Information about an MCP server
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerInfo {
+    pub name: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+```
+
+### 2. Modify `crates/rusty_claw/src/lib.rs`
+
+**Add messages module** (after line 64):
+```rust
+/// Message types and structures
+pub mod messages;
+```
+
+**Update prelude** (add to prelude module around line 72):
+```rust
+pub use crate::messages::{
+    Message, SystemMessage, AssistantMessage, ResultMessage, UserMessage,
+    ContentBlock, StreamEvent, UsageInfo, ToolInfo, McpServerInfo, ApiMessage,
+};
+```
+
+## Dependencies
+
+### Crates Required:
+- ✅ `serde` - Already in workspace dependencies
+- ✅ `serde_json` - Already in workspace dependencies
+- ✅ `serde` derive feature - Already enabled
+
+### Blocked By:
+- ✅ rusty_claw-9pf (Define error hierarchy) - **COMPLETE**
+
+### Blocks:
+- ❌ rusty_claw-sna (Implement query() function) - P1
+- ❌ rusty_claw-1ke (Add unit tests for message parsing and fixtures) - P2
+- ❌ rusty_claw-dss (Implement ClaudeAgentOptions builder) - P2
+
+## Testing Strategy
+
+### Unit Tests (`tests/` in messages.rs):
+
+1. **Serialization/Deserialization Tests:**
+   - Test each Message variant (System, Assistant, User, Result)
+   - Test each SystemMessage variant (Init, CompactBoundary)
+   - Test each ContentBlock variant (Text, ToolUse, ToolResult, Thinking)
+   - Test each ResultMessage variant (Success, Error, InputRequired)
+
+2. **Serde Tagging Tests:**
+   - Verify `type` field discrimination for Message
+   - Verify `subtype` field discrimination for SystemMessage and ResultMessage
+   - Verify `type` field discrimination for ContentBlock
+
+3. **Optional Fields Tests:**
+   - Test `#[serde(default)]` behavior for optional fields
+   - Test `#[serde(flatten)]` behavior for extra fields
+
+4. **JSON Round-Trip Tests:**
+   - Parse sample JSON → struct → serialize back to JSON
+   - Verify structural equivalence
+
+### Test Fixtures:
+
+Create sample JSON files for common message patterns:
+- Simple text response
+- Tool use sequence
+- System init message
+- Error result
+- Multi-turn conversation with thinking blocks
+
+## Risks & Considerations
+
+### Low Risk:
+- ✅ Straightforward type definitions from SPEC
+- ✅ All dependencies available
+- ✅ Serde handles tagged enums elegantly
+- ✅ Clear specification to follow
+
+### Medium Risk:
+- ⚠️ **Supporting types not fully specified in SPEC** - ApiMessage, UserMessage, UsageInfo, ToolInfo, McpServerInfo
+  - **Mitigation:** Infer from Anthropic API docs and Python SDK structure
+  - **Validation:** Will be tested in rusty_claw-1ke (message parsing fixtures)
+
+### Assumptions:
+1. ApiMessage follows standard Anthropic Messages API structure (role + content)
+2. UsageInfo matches Anthropic API token usage structure
+3. ToolInfo matches Claude Code CLI tool format
+4. McpServerInfo is a simple name + extra fields structure
+
+## Implementation Checklist
+
+- [ ] Create `crates/rusty_claw/src/messages.rs`
+- [ ] Implement Message enum with all variants
+- [ ] Implement SystemMessage enum
+- [ ] Implement AssistantMessage struct
+- [ ] Implement ResultMessage enum
+- [ ] Implement ContentBlock enum
+- [ ] Implement StreamEvent struct
+- [ ] Implement supporting types (ApiMessage, UserMessage, UsageInfo, ToolInfo, McpServerInfo)
+- [ ] Add comprehensive documentation for all types
+- [ ] Add module to lib.rs
+- [ ] Add types to prelude
+- [ ] Write unit tests for serialization/deserialization
+- [ ] Write unit tests for serde tagging
+- [ ] Write tests for optional fields handling
+- [ ] Verify all tests pass with `cargo test`
+- [ ] Run `cargo check` and `cargo clippy`
+
+## Verification
+
+### Build Verification:
+```bash
+cargo check --package rusty_claw
+cargo clippy --package rusty_claw -- -D warnings
+```
+
+### Test Verification:
+```bash
+cargo test --package rusty_claw messages::tests
+```
+
+### Documentation Verification:
+```bash
+cargo doc --package rusty_claw --no-deps --open
+```
+
+## References
+
+- **SPEC:** `docs/SPEC.md:173-273` - Message Types
+- **Error Types:** `crates/rusty_claw/src/error.rs` - ClawError for error handling
+- **Anthropic API:** Messages API structure (role, content, usage)
+- **Python SDK:** `claude-agent-sdk-python` for reference patterns
+- **Dependencies:** Workspace `Cargo.toml` for available crates
 
 ## Next Steps After Completion
 
-1. Mark rusty_claw-9pf as closed
-2. Unblocks rusty_claw-6cn (Transport trait implementation)
-3. Unblocks rusty_claw-pwc (Shared types and message structs)
-4. Unblocks rusty_claw-k71 (CLI discovery)
-5. Update `.attractor/current_task.md` with next task from pipeline
+1. Implement message parsing tests with fixtures (rusty_claw-1ke)
+2. Use these types in Transport trait implementation (rusty_claw-6cn)
+3. Use these types in query() function (rusty_claw-sna)
+4. Build ClaudeAgentOptions using these types (rusty_claw-dss)

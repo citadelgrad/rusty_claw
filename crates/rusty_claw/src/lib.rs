@@ -63,6 +63,9 @@ pub mod hooks {
 /// Error types and utilities
 pub mod error;
 
+/// Message types and structures
+pub mod messages;
+
 // Prelude module for common imports
 pub mod prelude {
     //! Common imports for rusty_claw users
@@ -70,4 +73,8 @@ pub mod prelude {
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
     pub use crate::error::ClawError;
+    pub use crate::messages::{
+        ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
+        StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
+    };
 }

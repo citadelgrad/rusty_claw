@@ -1,0 +1,626 @@
+//! Message types and structures for Claude Code CLI communication
+//!
+//! This module provides types for parsing and handling messages from the Claude Code CLI.
+//! All types use serde for serialization/deserialization with tagged enum variants.
+//!
+//! # Message Types
+//!
+//! The primary [`Message`] enum represents all possible messages from the CLI:
+//! - [`Message::System`] - System lifecycle events (init, compact boundary)
+//! - [`Message::Assistant`] - Assistant responses with content blocks
+//! - [`Message::User`] - User input messages
+//! - [`Message::Result`] - Final results (success, error, input required)
+//!
+//! # Content Blocks
+//!
+//! Assistant messages contain [`ContentBlock`] items:
+//! - [`ContentBlock::Text`] - Plain text content
+//! - [`ContentBlock::ToolUse`] - Tool invocation requests
+//! - [`ContentBlock::ToolResult`] - Tool execution results
+//! - [`ContentBlock::Thinking`] - Extended thinking tokens
+//!
+//! # Example
+//!
+//! ```
+//! use rusty_claw::messages::{Message, ContentBlock};
+//! use serde_json;
+//!
+//! let json = r#"{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Hello!"}]}}"#;
+//! let msg: Message = serde_json::from_str(json).unwrap();
+//! match msg {
+//!     Message::Assistant(assistant_msg) => {
+//!         assert_eq!(assistant_msg.message.role, "assistant");
+//!     },
+//!     _ => panic!("Expected assistant message"),
+//! }
+//! ```
+
+use serde::{Deserialize, Serialize};
+
+/// Top-level message type discriminated by `type` field
+///
+/// All messages from Claude Code CLI are wrapped in this enum.
+/// The `type` field is used for JSON deserialization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Message {
+    /// System lifecycle events (init, compact boundary)
+    System(SystemMessage),
+    /// Assistant responses with content blocks
+    Assistant(AssistantMessage),
+    /// User input messages
+    User(UserMessage),
+    /// Final results (success, error, input required)
+    Result(ResultMessage),
+}
+
+/// System message variants discriminated by `subtype` field
+///
+/// System messages represent lifecycle events in the agent session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum SystemMessage {
+    /// Session initialization with available tools and MCP servers
+    Init {
+        /// Unique session identifier
+        session_id: String,
+        /// Available tool definitions
+        tools: Vec<ToolInfo>,
+        /// Connected MCP server information
+        mcp_servers: Vec<McpServerInfo>,
+        /// Additional fields from the CLI
+        #[serde(flatten)]
+        extra: serde_json::Value,
+    },
+    /// Marker for conversation compaction boundary
+    CompactBoundary,
+}
+
+/// Assistant message containing API response with content blocks
+///
+/// Represents a response from Claude with text, tool use, or thinking content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantMessage {
+    /// The API message with role and content blocks
+    pub message: ApiMessage,
+    /// Optional parent tool use ID if this is a nested agent response
+    #[serde(default)]
+    pub parent_tool_use_id: Option<String>,
+    /// Optional duration of the API request in milliseconds
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+}
+
+/// User input message
+///
+/// Represents user-provided input to the agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserMessage {
+    /// The API message with role and content
+    pub message: ApiMessage,
+}
+
+/// Result message variants discriminated by `subtype` field
+///
+/// Final outcomes of agent execution: success, error, or input needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype", rename_all = "snake_case")]
+pub enum ResultMessage {
+    /// Successful execution with final result
+    Success {
+        /// The final result text
+        result: String,
+        /// Optional execution duration in milliseconds
+        #[serde(default)]
+        duration_ms: Option<u64>,
+        /// Optional number of conversation turns
+        #[serde(default)]
+        num_turns: Option<u32>,
+        /// Optional session identifier
+        #[serde(default)]
+        session_id: Option<String>,
+        /// Optional total cost in USD
+        #[serde(default)]
+        total_cost_usd: Option<f64>,
+        /// Optional token usage information
+        #[serde(default)]
+        usage: Option<UsageInfo>,
+    },
+    /// Error during execution
+    Error {
+        /// Error message text
+        error: String,
+        /// Additional error fields
+        #[serde(flatten)]
+        extra: serde_json::Value,
+    },
+    /// Agent requires additional user input
+    InputRequired,
+}
+
+/// Content block variants discriminated by `type` field
+///
+/// Represents different types of content in assistant messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlock {
+    /// Plain text content
+    Text {
+        /// The text content
+        text: String,
+    },
+    /// Tool invocation request
+    ToolUse {
+        /// Unique identifier for this tool use
+        id: String,
+        /// Name of the tool to invoke
+        name: String,
+        /// Tool input parameters as JSON
+        input: serde_json::Value,
+    },
+    /// Tool execution result
+    ToolResult {
+        /// ID of the tool use this result corresponds to
+        tool_use_id: String,
+        /// Result data as JSON
+        content: serde_json::Value,
+        /// Whether this result represents an error
+        #[serde(default)]
+        is_error: bool,
+    },
+    /// Extended thinking content
+    Thinking {
+        /// The thinking content text
+        thinking: String,
+    },
+}
+
+/// Streaming event from CLI
+///
+/// Used for real-time updates during agent execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamEvent {
+    /// Event type identifier
+    pub event_type: String,
+    /// Event data payload
+    pub data: serde_json::Value,
+}
+
+/// Message in Anthropic Messages API format
+///
+/// Standard structure for assistant and user messages.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiMessage {
+    /// Message role ("assistant" or "user")
+    pub role: String,
+    /// Message content blocks
+    pub content: Vec<ContentBlock>,
+}
+
+/// Token usage information from the API
+///
+/// Tracks input and output token consumption.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsageInfo {
+    /// Number of input tokens consumed
+    pub input_tokens: u32,
+    /// Number of output tokens generated
+    pub output_tokens: u32,
+}
+
+/// Information about an available tool
+///
+/// Provided in system init messages to describe callable tools.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolInfo {
+    /// Tool name identifier
+    pub name: String,
+    /// Optional tool description
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Optional JSON schema for tool input
+    #[serde(default)]
+    pub input_schema: Option<serde_json::Value>,
+}
+
+/// Information about an MCP server
+///
+/// Provided in system init messages to describe connected MCP servers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerInfo {
+    /// MCP server name identifier
+    pub name: String,
+    /// Additional server information fields
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_message_system_init() {
+        let json = json!({
+            "type": "system",
+            "subtype": "init",
+            "session_id": "sess_123",
+            "tools": [{"name": "bash", "description": "Run shell commands"}],
+            "mcp_servers": [{"name": "filesystem"}],
+            "extra_field": "value"
+        });
+
+        let msg: Message = serde_json::from_value(json.clone()).unwrap();
+        match &msg {
+            Message::System(SystemMessage::Init {
+                session_id,
+                tools,
+                mcp_servers,
+                ..
+            }) => {
+                assert_eq!(session_id, "sess_123");
+                assert_eq!(tools.len(), 1);
+                assert_eq!(tools[0].name, "bash");
+                assert_eq!(mcp_servers.len(), 1);
+                assert_eq!(mcp_servers[0].name, "filesystem");
+            }
+            _ => panic!("Expected System::Init message"),
+        }
+
+        // Round-trip test
+        let serialized = serde_json::to_value(&msg).unwrap();
+        assert_eq!(serialized["type"], "system");
+        assert_eq!(serialized["subtype"], "init");
+    }
+
+    #[test]
+    fn test_message_system_compact_boundary() {
+        let json = json!({
+            "type": "system",
+            "subtype": "compact_boundary"
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::System(SystemMessage::CompactBoundary) => {}
+            _ => panic!("Expected System::CompactBoundary message"),
+        }
+    }
+
+    #[test]
+    fn test_message_assistant() {
+        let json = json!({
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Hello!"}
+                ]
+            },
+            "parent_tool_use_id": "tool_123",
+            "duration_ms": 250
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.role, "assistant");
+                assert_eq!(assistant_msg.message.content.len(), 1);
+                assert_eq!(assistant_msg.parent_tool_use_id, Some("tool_123".to_string()));
+                assert_eq!(assistant_msg.duration_ms, Some(250));
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+    }
+
+    #[test]
+    fn test_message_user() {
+        let json = json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Hello assistant!"}
+                ]
+            }
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::User(user_msg) => {
+                assert_eq!(user_msg.message.role, "user");
+                assert_eq!(user_msg.message.content.len(), 1);
+            }
+            _ => panic!("Expected User message"),
+        }
+    }
+
+    #[test]
+    fn test_message_result_success() {
+        let json = json!({
+            "type": "result",
+            "subtype": "success",
+            "result": "Task completed",
+            "duration_ms": 1000,
+            "num_turns": 5,
+            "session_id": "sess_123",
+            "total_cost_usd": 0.025,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50
+            }
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Result(ResultMessage::Success {
+                result,
+                duration_ms,
+                num_turns,
+                session_id,
+                total_cost_usd,
+                usage,
+            }) => {
+                assert_eq!(result, "Task completed");
+                assert_eq!(duration_ms, Some(1000));
+                assert_eq!(num_turns, Some(5));
+                assert_eq!(session_id, Some("sess_123".to_string()));
+                assert_eq!(total_cost_usd, Some(0.025));
+                assert!(usage.is_some());
+                let usage = usage.unwrap();
+                assert_eq!(usage.input_tokens, 100);
+                assert_eq!(usage.output_tokens, 50);
+            }
+            _ => panic!("Expected Result::Success message"),
+        }
+    }
+
+    #[test]
+    fn test_message_result_error() {
+        let json = json!({
+            "type": "result",
+            "subtype": "error",
+            "error": "Something went wrong",
+            "code": 500
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Result(ResultMessage::Error { error, extra }) => {
+                assert_eq!(error, "Something went wrong");
+                assert_eq!(extra["code"], 500);
+            }
+            _ => panic!("Expected Result::Error message"),
+        }
+    }
+
+    #[test]
+    fn test_message_result_input_required() {
+        let json = json!({
+            "type": "result",
+            "subtype": "input_required"
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Result(ResultMessage::InputRequired) => {}
+            _ => panic!("Expected Result::InputRequired message"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_text() {
+        let json = json!({"type": "text", "text": "Hello world"});
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+
+        match block {
+            ContentBlock::Text { text } => {
+                assert_eq!(text, "Hello world");
+            }
+            _ => panic!("Expected Text block"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_tool_use() {
+        let json = json!({
+            "type": "tool_use",
+            "id": "tool_123",
+            "name": "bash",
+            "input": {"command": "ls -la"}
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::ToolUse { id, name, input } => {
+                assert_eq!(id, "tool_123");
+                assert_eq!(name, "bash");
+                assert_eq!(input["command"], "ls -la");
+            }
+            _ => panic!("Expected ToolUse block"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_tool_result() {
+        let json = json!({
+            "type": "tool_result",
+            "tool_use_id": "tool_123",
+            "content": {"output": "file1.txt\nfile2.txt"},
+            "is_error": false
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => {
+                assert_eq!(tool_use_id, "tool_123");
+                assert_eq!(content["output"], "file1.txt\nfile2.txt");
+                assert!(!is_error);
+            }
+            _ => panic!("Expected ToolResult block"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_tool_result_default_is_error() {
+        let json = json!({
+            "type": "tool_result",
+            "tool_use_id": "tool_123",
+            "content": {"output": "success"}
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::ToolResult { is_error, .. } => {
+                assert!(!is_error); // Should default to false
+            }
+            _ => panic!("Expected ToolResult block"),
+        }
+    }
+
+    #[test]
+    fn test_content_block_thinking() {
+        let json = json!({
+            "type": "thinking",
+            "thinking": "Let me consider this..."
+        });
+
+        let block: ContentBlock = serde_json::from_value(json).unwrap();
+        match block {
+            ContentBlock::Thinking { thinking } => {
+                assert_eq!(thinking, "Let me consider this...");
+            }
+            _ => panic!("Expected Thinking block"),
+        }
+    }
+
+    #[test]
+    fn test_stream_event() {
+        let json = json!({
+            "event_type": "message_start",
+            "data": {"message_id": "msg_123"}
+        });
+
+        let event: StreamEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(event.event_type, "message_start");
+        assert_eq!(event.data["message_id"], "msg_123");
+    }
+
+    #[test]
+    fn test_usage_info() {
+        let json = json!({
+            "input_tokens": 100,
+            "output_tokens": 50
+        });
+
+        let usage: UsageInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+    }
+
+    #[test]
+    fn test_tool_info_minimal() {
+        let json = json!({"name": "bash"});
+        let tool: ToolInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(tool.name, "bash");
+        assert!(tool.description.is_none());
+        assert!(tool.input_schema.is_none());
+    }
+
+    #[test]
+    fn test_tool_info_full() {
+        let json = json!({
+            "name": "bash",
+            "description": "Run shell commands",
+            "input_schema": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}}
+            }
+        });
+
+        let tool: ToolInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(tool.name, "bash");
+        assert_eq!(tool.description, Some("Run shell commands".to_string()));
+        assert!(tool.input_schema.is_some());
+    }
+
+    #[test]
+    fn test_mcp_server_info() {
+        let json = json!({
+            "name": "filesystem",
+            "version": "1.0.0",
+            "extra": "data"
+        });
+
+        let server: McpServerInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(server.name, "filesystem");
+        assert_eq!(server.extra["version"], "1.0.0");
+        assert_eq!(server.extra["extra"], "data");
+    }
+
+    #[test]
+    fn test_optional_fields_default() {
+        // Test that optional fields default correctly when missing
+        let json = json!({
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": []
+            }
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        match msg {
+            Message::Assistant(assistant_msg) => {
+                assert!(assistant_msg.parent_tool_use_id.is_none());
+                assert!(assistant_msg.duration_ms.is_none());
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+    }
+
+    #[test]
+    fn test_json_round_trip_complex() {
+        // Complex message with multiple content blocks
+        let original = Message::Assistant(AssistantMessage {
+            message: ApiMessage {
+                role: "assistant".to_string(),
+                content: vec![
+                    ContentBlock::Text {
+                        text: "I'll run that command.".to_string(),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "tool_xyz".to_string(),
+                        name: "bash".to_string(),
+                        input: json!({"command": "echo hello"}),
+                    },
+                    ContentBlock::Thinking {
+                        thinking: "This should work...".to_string(),
+                    },
+                ],
+            },
+            parent_tool_use_id: None,
+            duration_ms: Some(150),
+        });
+
+        // Serialize to JSON
+        let json = serde_json::to_value(&original).unwrap();
+
+        // Deserialize back
+        let roundtrip: Message = serde_json::from_value(json).unwrap();
+
+        // Verify structure is preserved
+        match roundtrip {
+            Message::Assistant(assistant_msg) => {
+                assert_eq!(assistant_msg.message.content.len(), 3);
+                assert_eq!(assistant_msg.duration_ms, Some(150));
+            }
+            _ => panic!("Expected Assistant message"),
+        }
+    }
+}
