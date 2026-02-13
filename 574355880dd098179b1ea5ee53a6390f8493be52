@@ -1,0 +1,23 @@
+CONTRIBUTING.md
+  dc65b6f84b9b51b8 1-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "574355880dd098179b1ea5ee53a6390f8493be52",
+  "prompts": {
+    "dc65b6f84b9b51b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1bea218b-3057-4562-b82a-41ceafb82e5e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2197,
+      "overriden_lines": 0
+    }
+  }
+}
