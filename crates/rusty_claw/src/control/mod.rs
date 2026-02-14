@@ -388,14 +388,19 @@ impl ControlProtocol {
     /// ```
     pub async fn handle_incoming(&self, request_id: &str, request: IncomingControlRequest) {
         use serde_json::json;
+        use tracing::error;
 
         let response = match request {
             IncomingControlRequest::CanUseTool {
                 tool_name,
                 tool_input,
             } => {
-                let handlers = self.handlers.lock().await;
-                if let Some(handler) = &handlers.can_use_tool {
+                // Clone handler Arc and drop lock before awaiting to avoid deadlock
+                let handler = {
+                    let handlers = self.handlers.lock().await;
+                    handlers.can_use_tool.clone()
+                };
+                if let Some(handler) = handler {
                     match handler.can_use_tool(&tool_name, &tool_input).await {
                         Ok(allowed) => ControlResponse::Success {
                             data: json!({ "allowed": allowed }),
@@ -418,8 +423,12 @@ impl ControlProtocol {
                 hook_event,
                 hook_input,
             } => {
-                let handlers = self.handlers.lock().await;
-                if let Some(handler) = handlers.hook_callbacks.get(&hook_id) {
+                // Clone handler Arc and drop lock before awaiting to avoid deadlock
+                let handler = {
+                    let handlers = self.handlers.lock().await;
+                    handlers.hook_callbacks.get(&hook_id).cloned()
+                };
+                if let Some(handler) = handler {
                     match handler.call(hook_event, hook_input).await {
                         Ok(result) => ControlResponse::Success { data: result },
                         Err(e) => ControlResponse::Error {
@@ -439,8 +448,12 @@ impl ControlProtocol {
                 server_name,
                 message,
             } => {
-                let handlers = self.handlers.lock().await;
-                if let Some(handler) = &handlers.mcp_message {
+                // Clone handler Arc and drop lock before awaiting to avoid deadlock
+                let handler = {
+                    let handlers = self.handlers.lock().await;
+                    handlers.mcp_message.clone()
+                };
+                if let Some(handler) = handler {
                     match handler.handle(&server_name, message).await {
                         Ok(result) => ControlResponse::Success { data: result },
                         Err(e) => ControlResponse::Error {
@@ -464,12 +477,15 @@ impl ControlProtocol {
             "response": response,
         });
 
-        if let Err(e) = self
-            .transport
-            .write(&serde_json::to_vec(&msg).unwrap())
-            .await
-        {
-            eprintln!("Failed to send control response: {}", e);
+        match serde_json::to_vec(&msg) {
+            Ok(bytes) => {
+                if let Err(e) = self.transport.write(&bytes).await {
+                    error!("Failed to send control response: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("Failed to serialize control response: {}", e);
+            }
         }
     }
 }

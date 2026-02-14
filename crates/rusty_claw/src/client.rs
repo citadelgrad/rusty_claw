@@ -104,6 +104,7 @@
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
@@ -172,7 +173,7 @@ pub struct ClaudeClient {
     message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>>>,
 
     /// Session initialization state
-    is_initialized: Arc<Mutex<bool>>,
+    is_initialized: Arc<AtomicBool>,
 }
 
 impl ClaudeClient {
@@ -202,7 +203,7 @@ impl ClaudeClient {
             transport: None,
             options,
             message_rx: Arc::new(Mutex::new(None)),
-            is_initialized: Arc::new(Mutex::new(false)),
+            is_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -230,7 +231,7 @@ impl ClaudeClient {
             .as_ref()
             .map(|t| t.is_ready())
             .unwrap_or(false)
-            && *self.is_initialized.blocking_lock()
+            && self.is_initialized.load(Ordering::SeqCst)
     }
 
     /// Connect to the Claude CLI and initialize the session
@@ -355,7 +356,7 @@ impl ClaudeClient {
         self.transport = Some(transport_arc);
         self.control = Some(control);
         *self.message_rx.lock().await = Some(message_rx);
-        *self.is_initialized.lock().await = true;
+        self.is_initialized.store(true, Ordering::SeqCst);
 
         Ok(())
     }
@@ -397,7 +398,7 @@ impl ClaudeClient {
         }
 
         // Clear state
-        *self.is_initialized.lock().await = false;
+        self.is_initialized.store(false, Ordering::SeqCst);
         self.transport = None;
         self.control = None;
 
