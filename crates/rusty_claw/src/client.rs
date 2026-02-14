@@ -282,7 +282,58 @@ impl ClaudeClient {
         if let Some(mode) = &self.options.permission_mode {
             cli_args.push(format!("--permission-mode={}", mode.to_cli_arg()));
         }
-        // Add other options as needed...
+
+        // System prompt
+        if let Some(sys_prompt) = &self.options.system_prompt {
+            match sys_prompt {
+                crate::options::SystemPrompt::Custom(text) => {
+                    cli_args.push("--system-prompt".to_string());
+                    cli_args.push(text.clone());
+                }
+                crate::options::SystemPrompt::Preset { preset } => {
+                    cli_args.push(format!("--system-prompt-preset={}", preset));
+                }
+            }
+        }
+
+        // Append system prompt
+        if let Some(append) = &self.options.append_system_prompt {
+            cli_args.push("--append-system-prompt".to_string());
+            cli_args.push(append.clone());
+        }
+
+        // Allowed tools
+        if !self.options.allowed_tools.is_empty() {
+            cli_args.push(format!("--allowed-tools={}", self.options.allowed_tools.join(",")));
+        }
+
+        // Disallowed tools
+        if !self.options.disallowed_tools.is_empty() {
+            cli_args.push(format!("--disallowed-tools={}", self.options.disallowed_tools.join(",")));
+        }
+
+        // Session options
+        if let Some(resume) = &self.options.resume {
+            cli_args.push(format!("--resume={}", resume));
+        }
+        if self.options.fork_session {
+            cli_args.push("--fork-session".to_string());
+        }
+        if let Some(name) = &self.options.session_name {
+            cli_args.push(format!("--session-name={}", name));
+        }
+        if self.options.enable_file_checkpointing {
+            cli_args.push("--enable-file-checkpointing".to_string());
+        }
+
+        // Settings isolation for reproducibility
+        match &self.options.settings_sources {
+            Some(sources) => cli_args.push(format!("--settings-sources={}", sources.join(","))),
+            None => cli_args.push("--settings-sources=".to_string()),
+        }
+
+        // Enable control protocol input
+        cli_args.push("--input-format=stream-json".to_string());
 
         // Create and connect transport
         let mut transport = SubprocessCLITransport::new(None, cli_args);

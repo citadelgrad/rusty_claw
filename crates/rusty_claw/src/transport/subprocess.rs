@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, Mutex};
-use tokio::time::timeout;
+
 use tracing::{debug, error, trace, warn};
 
 use crate::error::ClawError;
@@ -56,8 +56,8 @@ type MessageReceiver = mpsc::UnboundedReceiver<Result<Value, ClawError>>;
 /// assert!(transport.is_ready());
 /// ```
 pub struct SubprocessCLITransport {
-    /// Child process handle (None until connected)
-    child: Option<Child>,
+    /// Process ID (set during connect, used for signal-based shutdown)
+    child_pid: Option<u32>,
 
     /// Stdin handle wrapped for concurrent access
     stdin: Arc<Mutex<Option<ChildStdin>>>,
@@ -110,7 +110,7 @@ impl SubprocessCLITransport {
     /// ```
     pub fn new(cli_path: Option<PathBuf>, args: Vec<String>) -> Self {
         Self {
-            child: None,
+            child_pid: None,
             stdin: Arc::new(Mutex::new(None)),
             messages_rx: Arc::new(std::sync::Mutex::new(None)),
             connected: Arc::new(AtomicBool::new(false)),
@@ -210,75 +210,58 @@ impl SubprocessCLITransport {
         })
     }
 
-    /// Perform graceful shutdown: close stdin, wait for exit
+    /// Perform graceful shutdown: close stdin, wait briefly, then signal
     async fn graceful_shutdown(&mut self) -> Result<(), ClawError> {
         debug!("Starting graceful shutdown");
 
-        // Close stdin first
+        // Close stdin first to signal the CLI to exit
         self.end_input().await?;
 
-        // Wait for process to exit (with timeout)
-        if let Some(mut child) = self.child.take() {
-            match timeout(Duration::from_secs(5), child.wait()).await {
-                Ok(Ok(status)) => {
-                    debug!("Process exited gracefully with status: {:?}", status);
-                    if !status.success() {
-                        let stderr = self.stderr_buffer.lock().await.clone();
-                        return Err(ClawError::Process {
-                            code: status.code().unwrap_or(-1),
-                            stderr,
-                        });
-                    }
-                }
-                Ok(Err(e)) => {
-                    return Err(ClawError::Io(e));
-                }
-                Err(_) => {
-                    warn!("Graceful shutdown timed out, sending SIGTERM");
-                    return self.force_shutdown(child).await;
-                }
+        // Give the process a moment to exit gracefully after stdin closes
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // If still connected, escalate to signal-based shutdown
+        if self.connected.load(Ordering::SeqCst) {
+            if let Some(pid) = self.child_pid {
+                debug!("Process still running after stdin close, sending signals to pid {}", pid);
+                self.force_shutdown_by_pid(pid).await?;
             }
         }
 
         Ok(())
     }
 
-    /// Force shutdown: SIGTERM → wait → SIGKILL
-    async fn force_shutdown(&mut self, mut child: Child) -> Result<(), ClawError> {
-        // Send SIGTERM
+    /// Force shutdown using PID: SIGTERM → wait → SIGKILL
+    async fn force_shutdown_by_pid(&self, pid: u32) -> Result<(), ClawError> {
         #[cfg(unix)]
         {
             use nix::sys::signal::{kill, Signal};
             use nix::unistd::Pid;
 
-            if let Some(pid) = child.id() {
-                debug!("Sending SIGTERM to pid {}", pid);
-                let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+            let nix_pid = Pid::from_raw(pid as i32);
 
-                // Wait up to 5s for SIGTERM to work
-                match timeout(Duration::from_secs(5), child.wait()).await {
-                    Ok(Ok(status)) => {
-                        debug!("Process exited after SIGTERM: {:?}", status);
-                        return Ok(());
-                    }
-                    Ok(Err(e)) => {
-                        warn!("Error waiting after SIGTERM: {}", e);
-                    }
-                    Err(_) => {
-                        warn!("SIGTERM timed out, sending SIGKILL");
-                    }
+            debug!("Sending SIGTERM to pid {}", pid);
+            let _ = kill(nix_pid, Signal::SIGTERM);
+
+            // Wait up to 5s for SIGTERM to take effect
+            for _ in 0..50 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                if !self.connected.load(Ordering::SeqCst) {
+                    debug!("Process exited after SIGTERM");
+                    return Ok(());
                 }
-
-                // SIGTERM failed, use SIGKILL
-                debug!("Sending SIGKILL to pid {}", pid);
-                let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
             }
+
+            // SIGTERM failed, use SIGKILL
+            warn!("SIGTERM timed out, sending SIGKILL to pid {}", pid);
+            let _ = kill(nix_pid, Signal::SIGKILL);
         }
 
         #[cfg(not(unix))]
         {
-            debug!("Force killing process (non-Unix platform)");
-            let _ = child.kill().await;
+            // On non-Unix, kill_on_drop(true) will handle cleanup when transport is dropped
+            warn!("Signal-based shutdown not available on non-Unix; relying on kill_on_drop");
+            let _ = pid;
         }
 
         Ok(())
@@ -332,7 +315,9 @@ impl Transport for SubprocessCLITransport {
             }
         })?;
 
-        debug!("Process spawned with pid: {:?}", child.id());
+        let child_pid = child.id();
+        debug!("Process spawned with pid: {:?}", child_pid);
+        self.child_pid = child_pid;
 
         // Take stdin/stdout/stderr handles
         let stdin = child.stdin.take().ok_or_else(|| {

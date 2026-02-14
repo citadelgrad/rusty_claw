@@ -157,10 +157,11 @@ pub async fn query(
     let stream = UnboundedReceiverStream::new(rx)
         .map(|result| {
             result.and_then(|value| {
+                let raw = value.to_string();
                 serde_json::from_value::<Message>(value).map_err(|e| {
                     ClawError::MessageParse {
                         reason: e.to_string(),
-                        raw: format!("{:?}", e),
+                        raw,
                     }
                 })
             })

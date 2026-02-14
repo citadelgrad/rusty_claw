@@ -408,7 +408,10 @@ impl ClaudeAgentOptions {
         }
 
         // Settings isolation for reproducibility
-        args.push("--settings-sources=".to_string());
+        match &self.settings_sources {
+            Some(sources) => args.push(format!("--settings-sources={}", sources.join(","))),
+            None => args.push("--settings-sources=".to_string()),
+        }
 
         // Enable control protocol input
         args.push("--input-format=stream-json".to_string());
@@ -752,6 +755,25 @@ mod tests {
         assert!(args.contains(&"--fork-session".to_string()));
         assert!(args.contains(&"--session-name=my-session".to_string()));
         assert!(args.contains(&"--enable-file-checkpointing".to_string()));
+    }
+
+    #[test]
+    fn test_to_cli_args_settings_sources_default() {
+        // When no settings_sources configured, should emit empty --settings-sources=
+        let opts = ClaudeAgentOptions::default();
+        let args = opts.to_cli_args("test");
+        assert!(args.contains(&"--settings-sources=".to_string()));
+    }
+
+    #[test]
+    fn test_to_cli_args_settings_sources_custom() {
+        // When settings_sources configured, should use the user's values
+        let opts = ClaudeAgentOptions::builder()
+            .settings_sources(vec!["local".to_string(), "project".to_string()])
+            .build();
+        let args = opts.to_cli_args("test");
+        assert!(args.contains(&"--settings-sources=local,project".to_string()));
+        assert!(!args.contains(&"--settings-sources=".to_string()));
     }
 
     #[test]
