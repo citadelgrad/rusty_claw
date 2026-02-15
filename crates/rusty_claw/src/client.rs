@@ -349,13 +349,21 @@ impl ClaudeClient {
         // Create control protocol
         let control = Arc::new(ControlProtocol::new(transport_arc.clone()));
 
-        // Initialize session
+        // Spawn background message routing task BEFORE initialize().
+        // This is critical: initialize() sends a control request and waits for
+        // a response. The response arrives via the transport's message channel,
+        // so we need a reader routing control messages to the ControlProtocol.
+        // Without this, initialize() would always timeout.
+        let (user_tx, user_rx) = mpsc::unbounded_channel();
+        Self::spawn_message_router(message_rx, control.clone(), user_tx);
+
+        // Initialize session (now works because router handles the response)
         control.initialize(&self.options).await?;
 
-        // Store state
+        // Store state (user_rx receives only non-control messages)
         self.transport = Some(transport_arc);
         self.control = Some(control);
-        *self.message_rx.lock().await = Some(message_rx);
+        *self.message_rx.lock().await = Some(user_rx);
         self.is_initialized.store(true, Ordering::SeqCst);
 
         Ok(())
@@ -476,7 +484,9 @@ impl ClaudeClient {
         })?;
 
         // Create and return response stream
-        Ok(ResponseStream::new(rx, self.control.as_ref().unwrap().clone()))
+        // Control messages are already handled by the background router task,
+        // so ResponseStream only needs the user message channel.
+        Ok(ResponseStream::new(rx))
     }
 
     /// Write a user message to the CLI stdin
@@ -525,6 +535,102 @@ impl ClaudeClient {
         transport.write(&bytes).await?;
 
         Ok(())
+    }
+
+    /// Spawn background task that routes messages from the transport channel.
+    ///
+    /// Control messages (`control_request`, `control_response`) are dispatched
+    /// to the `ControlProtocol`. All other messages are forwarded to `user_tx`
+    /// for consumption by `ResponseStream`.
+    ///
+    /// This task runs for the lifetime of the connection and ensures that
+    /// control protocol requests (like `initialize()`) receive their responses
+    /// even before a `ResponseStream` is created.
+    fn spawn_message_router(
+        mut rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>,
+        control: Arc<ControlProtocol>,
+        user_tx: mpsc::UnboundedSender<Result<Value, ClawError>>,
+    ) {
+        use crate::control::messages::{ControlResponse, IncomingControlRequest};
+        use tracing::{debug, warn};
+
+        tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
+                match msg {
+                    Ok(value) => {
+                        let msg_type = value.get("type").and_then(|v| v.as_str());
+
+                        match msg_type {
+                            Some("control_response") => {
+                                let request_id = value
+                                    .get("request_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                if let Some(response_val) = value.get("response") {
+                                    match serde_json::from_value::<ControlResponse>(
+                                        response_val.clone(),
+                                    ) {
+                                        Ok(response) => {
+                                            control
+                                                .handle_response(&request_id, response)
+                                                .await;
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "Failed to parse control response: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Some("control_request") => {
+                                let request_id = value
+                                    .get("request_id")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                if let Some(request_val) = value.get("request") {
+                                    match serde_json::from_value::<IncomingControlRequest>(
+                                        request_val.clone(),
+                                    ) {
+                                        Ok(incoming) => {
+                                            control
+                                                .handle_incoming(&request_id, incoming)
+                                                .await;
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "Failed to parse incoming control request: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                // Forward non-control messages to user channel
+                                if user_tx.send(Ok(value)).is_err() {
+                                    debug!("User message channel closed, stopping router");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if user_tx.send(Err(e)).is_err() {
+                            debug!("User message channel closed, stopping router");
+                            break;
+                        }
+                    }
+                }
+            }
+
+            debug!("Message routing task finished");
+        });
     }
 
     // Control operations
@@ -899,21 +1005,17 @@ impl ClaudeClient {
 
 /// Stream of response messages from Claude CLI
 ///
-/// `ResponseStream` wraps the message receiver from the transport and:
+/// `ResponseStream` wraps the user-facing message channel and:
 /// - Parses raw JSON values into typed `Message` structs
-/// - Routes control protocol messages internally (transparent to user)
 /// - Yields only user-facing messages (Assistant, Result, System)
 /// - Automatically ends when the CLI closes the stream
 ///
 /// # Control Message Routing
 ///
-/// The stream automatically handles control protocol messages:
-/// - `Message::ControlRequest` → Routed to registered handlers
-/// - `Message::ControlResponse` → Matched to pending requests
-/// - Other messages → Yielded to the caller
-///
-/// This means you never see control messages in the stream - they are handled
-/// internally by the control protocol.
+/// Control protocol messages (`control_request`, `control_response`) are
+/// handled transparently by a background routing task spawned during
+/// [`ClaudeClient::connect()`]. The `ResponseStream` never sees control
+/// messages - they are filtered before reaching this stream.
 ///
 /// # Example
 ///
@@ -943,11 +1045,8 @@ impl ClaudeClient {
 /// # }
 /// ```
 pub struct ResponseStream {
-    /// Receiver for raw messages from transport
+    /// Receiver for user-facing messages (control messages already routed by background task)
     rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>,
-
-    /// Control protocol for routing control messages
-    control: Arc<ControlProtocol>,
 
     /// Whether the stream has completed
     is_complete: bool,
@@ -955,13 +1054,9 @@ pub struct ResponseStream {
 
 impl ResponseStream {
     /// Create a new response stream
-    fn new(
-        rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>,
-        control: Arc<ControlProtocol>,
-    ) -> Self {
+    fn new(rx: mpsc::UnboundedReceiver<Result<Value, ClawError>>) -> Self {
         Self {
             rx,
-            control,
             is_complete: false,
         }
     }
@@ -978,94 +1073,21 @@ impl Stream for ResponseStream {
     type Item = Result<Message, ClawError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        use crate::control::messages::{ControlResponse, IncomingControlRequest};
-
         // Stream already complete
         if self.is_complete {
             return Poll::Ready(None);
         }
 
-        // Poll the receiver
+        // Poll the receiver - control messages are already filtered out by
+        // the background message routing task spawned during connect()
         match Pin::new(&mut self.rx).poll_recv(cx) {
             Poll::Ready(Some(Ok(value))) => {
-                // Check message type first
-                let msg_type = value.get("type").and_then(|v| v.as_str());
-
-                match msg_type {
-                    Some("control_request") => {
-                        // Incoming control request from CLI - parse as IncomingControlRequest
-                        // and route to handler (transparent to user)
-                        let request_id = value
-                            .get("request_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        // Extract the request field and parse as IncomingControlRequest
-                        if let Some(request_val) = value.get("request") {
-                            match serde_json::from_value::<IncomingControlRequest>(request_val.clone()) {
-                                Ok(incoming) => {
-                                    let control = self.control.clone();
-                                    tokio::spawn(async move {
-                                        control.handle_incoming(&request_id, incoming).await;
-                                    });
-                                    // Control messages are transparent - poll again
-                                    cx.waker().wake_by_ref();
-                                    Poll::Pending
-                                }
-                                Err(e) => Poll::Ready(Some(Err(ClawError::MessageParse {
-                                    reason: format!("Failed to parse incoming control request: {}", e),
-                                    raw: value.to_string(),
-                                }))),
-                            }
-                        } else {
-                            Poll::Ready(Some(Err(ClawError::MessageParse {
-                                reason: "control_request missing 'request' field".to_string(),
-                                raw: value.to_string(),
-                            })))
-                        }
-                    }
-                    Some("control_response") => {
-                        // Control response - parse and route to pending request
-                        let request_id = value
-                            .get("request_id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        if let Some(response_val) = value.get("response") {
-                            match serde_json::from_value::<ControlResponse>(response_val.clone()) {
-                                Ok(response) => {
-                                    let control = self.control.clone();
-                                    tokio::spawn(async move {
-                                        control.handle_response(&request_id, response).await;
-                                    });
-                                    // Control messages are transparent - poll again
-                                    cx.waker().wake_by_ref();
-                                    Poll::Pending
-                                }
-                                Err(e) => Poll::Ready(Some(Err(ClawError::MessageParse {
-                                    reason: format!("Failed to parse control response: {}", e),
-                                    raw: value.to_string(),
-                                }))),
-                            }
-                        } else {
-                            Poll::Ready(Some(Err(ClawError::MessageParse {
-                                reason: "control_response missing 'response' field".to_string(),
-                                raw: value.to_string(),
-                            })))
-                        }
-                    }
-                    _ => {
-                        // User-facing message - parse normally and yield
-                        match serde_json::from_value::<Message>(value.clone()) {
-                            Ok(message) => Poll::Ready(Some(Ok(message))),
-                            Err(e) => Poll::Ready(Some(Err(ClawError::MessageParse {
-                                reason: format!("Failed to parse message: {}", e),
-                                raw: value.to_string(),
-                            }))),
-                        }
-                    }
+                match serde_json::from_value::<Message>(value.clone()) {
+                    Ok(message) => Poll::Ready(Some(Ok(message))),
+                    Err(e) => Poll::Ready(Some(Err(ClawError::MessageParse {
+                        reason: format!("Failed to parse message: {}", e),
+                        raw: value.to_string(),
+                    }))),
                 }
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
@@ -1082,7 +1104,6 @@ impl Stream for ResponseStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::SubprocessCLITransport;
 
     #[test]
     fn test_new_client() {
@@ -1101,9 +1122,7 @@ mod tests {
     #[test]
     fn test_response_stream_not_complete_initially() {
         let (_tx, rx) = mpsc::unbounded_channel();
-        let transport = Arc::new(SubprocessCLITransport::new(None, vec![]));
-        let control = Arc::new(ControlProtocol::new(transport));
-        let stream = ResponseStream::new(rx, control);
+        let stream = ResponseStream::new(rx);
         assert!(!stream.is_complete());
     }
 
