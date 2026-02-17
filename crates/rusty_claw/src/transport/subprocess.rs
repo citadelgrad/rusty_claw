@@ -393,8 +393,11 @@ impl Transport for SubprocessCLITransport {
             return Ok(());
         }
 
+        // Perform graceful shutdown first (needs connected=true to check process liveness)
+        let result = self.graceful_shutdown().await;
+        // Mark as disconnected after shutdown completes
         self.connected.store(false, Ordering::SeqCst);
-        self.graceful_shutdown().await
+        result
     }
 
     fn is_ready(&self) -> bool {
