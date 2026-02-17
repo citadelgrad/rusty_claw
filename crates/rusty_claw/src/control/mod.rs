@@ -480,7 +480,8 @@ impl ControlProtocol {
         });
 
         match serde_json::to_vec(&msg) {
-            Ok(bytes) => {
+            Ok(mut bytes) => {
+                bytes.push(b'\n'); // NDJSON requires trailing newline
                 if let Err(e) = self.transport.write(&bytes).await {
                     error!("Failed to send control response: {}", e);
                 }
