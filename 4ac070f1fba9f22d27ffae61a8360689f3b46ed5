@@ -1,0 +1,53 @@
+crates/rusty_claw/src/transport/subprocess.rs
+  c6efca4b7d31d9f8 6,61,81-86,120,127-128,133-142,244-245,330-339,350
+crates/rusty_claw/src/control/mod.rs
+  c6efca4b7d31d9f8 559
+crates/rusty_claw/src/transport/mod.rs
+  c6efca4b7d31d9f8 166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "4ac070f1fba9f22d27ffae61a8360689f3b46ed5",
+  "prompts": {
+    "61fd885d73217756": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5854cb2c-6062-4402-9ebf-d1db0653169d",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 878,
+      "overriden_lines": 0
+    },
+    "c6efca4b7d31d9f8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b42a8c0f-4186-4418-8269-cb2a0cc80ae7",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 19,
+      "accepted_lines": 60,
+      "overriden_lines": 0
+    },
+    "dc65b6f84b9b51b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1bea218b-3057-4562-b82a-41ceafb82e5e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2068,
+      "overriden_lines": 0
+    }
+  }
+}
