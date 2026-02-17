@@ -54,48 +54,62 @@
 ### 1.2 Crate Structure
 
 ```
-rusty_claw/                     # Workspace root
-├── Cargo.toml                  # Workspace definition
+rusty_claw/                         # Workspace root
+├── Cargo.toml                      # Workspace definition
 ├── crates/
-│   ├── rusty_claw/             # Main library crate
+│   ├── rusty_claw/                 # Main library crate
 │   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── lib.rs          # Public API re-exports
-│   │       ├── query.rs        # query() function
-│   │       ├── client.rs       # ClaudeClient
-│   │       ├── transport/
-│   │       │   ├── mod.rs      # Transport trait
-│   │       │   └── subprocess.rs
-│   │       ├── protocol/
-│   │       │   ├── mod.rs      # Control protocol handler
-│   │       │   ├── control.rs  # Control request/response types
-│   │       │   └── messages.rs # Message types
-│   │       ├── hooks.rs        # Hook system
-│   │       ├── mcp/
-│   │       │   ├── mod.rs      # MCP bridge
-│   │       │   ├── server.rs   # In-process MCP server
-│   │       │   └── tools.rs    # Tool types
-│   │       ├── permissions.rs  # Permission management
-│   │       ├── options.rs      # ClaudeAgentOptions builder
-│   │       ├── types.rs        # Shared types
-│   │       └── errors.rs       # Error hierarchy
-│   └── rusty_claw_macros/      # Proc macro crate
+│   │   ├── src/
+│   │   │   ├── lib.rs              # Public API re-exports & prelude
+│   │   │   ├── query.rs            # query() one-shot function
+│   │   │   ├── client.rs           # ClaudeClient for multi-turn sessions
+│   │   │   ├── transport/
+│   │   │   │   ├── mod.rs          # Transport trait definition
+│   │   │   │   ├── subprocess.rs   # SubprocessCLITransport implementation
+│   │   │   │   └── discovery.rs    # CLI path finding & version validation
+│   │   │   ├── control/
+│   │   │   │   ├── mod.rs          # ControlProtocol handler & routing
+│   │   │   │   ├── messages.rs     # Control request/response types
+│   │   │   │   ├── handlers.rs     # Handler registry (can_use_tool, hooks, MCP)
+│   │   │   │   └── pending.rs      # Pending request tracking with ID mapping
+│   │   │   ├── hooks/
+│   │   │   │   ├── mod.rs          # Hook registry and dispatcher
+│   │   │   │   ├── types.rs        # HookInput, HookContext
+│   │   │   │   ├── callback.rs     # HookCallback trait + blanket impl
+│   │   │   │   └── response.rs     # HookResponse, PermissionDecision
+│   │   │   ├── mcp_server.rs       # In-process MCP server & JSON-RPC routing
+│   │   │   ├── permissions/
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── handler.rs      # DefaultPermissionHandler
+│   │   │   ├── messages.rs         # Message, ContentBlock, SystemMessage, etc.
+│   │   │   ├── options.rs          # ClaudeAgentOptions builder
+│   │   │   ├── error.rs            # ClawError hierarchy (thiserror)
+│   │   │   └── types.rs            # Shared type definitions
+│   │   ├── examples/
+│   │   │   ├── simple_query.rs
+│   │   │   ├── interactive_client.rs
+│   │   │   ├── custom_tool.rs
+│   │   │   ├── hooks_guardrails.rs
+│   │   │   └── subagent_usage.rs
+│   │   └── tests/
+│   │       ├── integration_test.rs
+│   │       ├── mock_cli.rs         # Mock CLI subprocess for testing
+│   │       └── fixtures/           # NDJSON message fixtures for replay
+│   └── rusty_claw_macros/          # Proc macro crate
 │       ├── Cargo.toml
 │       └── src/
-│           └── lib.rs          # #[claw_tool] proc macro
-├── examples/
-│   ├── simple_query.rs
-│   ├── interactive_client.rs
-│   ├── custom_tool.rs
-│   └── hooks_guardrails.rs
-└── tests/
-    ├── integration/
-    │   ├── query_test.rs
-    │   ├── client_test.rs
-    │   └── mock_cli.rs         # Mock CLI process for testing
-    └── unit/
-        ├── message_parse_test.rs
-        └── protocol_test.rs
+│           └── lib.rs              # #[claw_tool] attribute macro
+├── docs/                           # Documentation
+│   ├── QUICKSTART.md               # Step-by-step tutorial
+│   ├── HOOKS.md                    # Hook system guide
+│   ├── SESSIONS.md                 # Session management guide
+│   ├── MCP.md                      # MCP integration guide
+│   ├── PERMISSIONS.md              # Permission modes and rules
+│   ├── SUBAGENTS.md                # Subagent definition and usage
+│   ├── MESSAGES.md                 # Message types reference
+│   ├── SPEC.md                     # Technical specification
+│   └── PRD.md                      # Product requirements
+└── CONTRIBUTING.md                 # Development guide
 ```
 
 ---
