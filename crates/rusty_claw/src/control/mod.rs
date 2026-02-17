@@ -288,9 +288,11 @@ impl ControlProtocol {
             "request": request,
         });
 
-        // Send to CLI
+        // Send to CLI (NDJSON requires trailing newline)
+        let mut bytes = serde_json::to_vec(&msg)?;
+        bytes.push(b'\n');
         self.transport
-            .write(&serde_json::to_vec(&msg)?)
+            .write(&bytes)
             .await
             .map_err(|e| ClawError::Connection(format!("Failed to send control request: {}", e)))?;
 
