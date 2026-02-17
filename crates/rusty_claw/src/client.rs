@@ -337,7 +337,18 @@ impl ClaudeClient {
         cli_args.push("--input-format=stream-json".to_string());
 
         // Create and connect transport
-        let mut transport = SubprocessCLITransport::new(None, cli_args);
+        let mut transport = SubprocessCLITransport::new(self.options.cli_path.clone(), cli_args);
+
+        // Apply working directory if configured
+        if let Some(cwd) = &self.options.cwd {
+            transport.set_cwd(cwd.clone());
+        }
+
+        // Apply environment variables if configured
+        if !self.options.env.is_empty() {
+            transport.set_env(self.options.env.clone());
+        }
+
         transport.connect().await?;
 
         // Get message receiver before wrapping in Arc
@@ -398,11 +409,8 @@ impl ClaudeClient {
     /// ```
     pub async fn close(&mut self) -> Result<(), ClawError> {
         if let Some(transport) = &self.transport {
-            // End input stream
-            transport.end_input().await?;
-
-            // Note: Can't call close() on Arc<dyn Transport> because it requires &mut self
-            // The transport will be cleaned up when dropped
+            // Graceful shutdown: close stdin, wait, then signal if needed
+            transport.close().await?;
         }
 
         // Clear state
