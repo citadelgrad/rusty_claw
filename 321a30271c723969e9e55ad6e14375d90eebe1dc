@@ -1,0 +1,36 @@
+.github/workflows/ci.yml
+  184852c581e8ec04 1-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "321a30271c723969e9e55ad6e14375d90eebe1dc",
+  "prompts": {
+    "184852c581e8ec04": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f591520-be6f-4960-8eb4-3c72fa286837",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 75,
+      "total_deletions": 0,
+      "accepted_lines": 75,
+      "overriden_lines": 0
+    },
+    "29c4dda569e6427e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "835cc006-d985-457b-b163-b7cf8504dc7e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 10,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}
