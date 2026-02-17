@@ -556,7 +556,7 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<(), ClawError> {
+        async fn close(&self) -> Result<(), ClawError> {
             Ok(())
         }
 

@@ -3,6 +3,7 @@
 //! This module provides [`SubprocessCLITransport`], which spawns the `claude` CLI
 //! as a child process and communicates over stdin/stdout pipes.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -57,7 +58,7 @@ type MessageReceiver = mpsc::UnboundedReceiver<Result<Value, ClawError>>;
 /// ```
 pub struct SubprocessCLITransport {
     /// Process ID (set during connect, used for signal-based shutdown)
-    child_pid: Option<u32>,
+    child_pid: std::sync::Mutex<Option<u32>>,
 
     /// Stdin handle wrapped for concurrent access
     stdin: Arc<Mutex<Option<ChildStdin>>>,
@@ -76,6 +77,12 @@ pub struct SubprocessCLITransport {
 
     /// Arguments to pass to CLI
     args: Vec<String>,
+
+    /// Working directory for the subprocess
+    cwd: Option<PathBuf>,
+
+    /// Environment variables for the subprocess
+    env: HashMap<String, String>,
 
     /// Captured stderr for error diagnostics
     stderr_buffer: Arc<Mutex<String>>,
@@ -110,15 +117,27 @@ impl SubprocessCLITransport {
     /// ```
     pub fn new(cli_path: Option<PathBuf>, args: Vec<String>) -> Self {
         Self {
-            child_pid: None,
+            child_pid: std::sync::Mutex::new(None),
             stdin: Arc::new(Mutex::new(None)),
             messages_rx: Arc::new(std::sync::Mutex::new(None)),
             connected: Arc::new(AtomicBool::new(false)),
             cli_path_arg: cli_path,
             cli_path: Arc::new(Mutex::new(None)),
             args,
+            cwd: None,
+            env: HashMap::new(),
             stderr_buffer: Arc::new(Mutex::new(String::new())),
         }
+    }
+
+    /// Set the working directory for the subprocess
+    pub fn set_cwd(&mut self, cwd: PathBuf) {
+        self.cwd = Some(cwd);
+    }
+
+    /// Set environment variables for the subprocess
+    pub fn set_env(&mut self, env: HashMap<String, String>) {
+        self.env = env;
     }
 
     /// Spawn background task to read stdout and parse NDJSON messages
@@ -211,7 +230,7 @@ impl SubprocessCLITransport {
     }
 
     /// Perform graceful shutdown: close stdin, wait briefly, then signal
-    async fn graceful_shutdown(&mut self) -> Result<(), ClawError> {
+    async fn graceful_shutdown(&self) -> Result<(), ClawError> {
         debug!("Starting graceful shutdown");
 
         // Close stdin first to signal the CLI to exit
@@ -222,7 +241,8 @@ impl SubprocessCLITransport {
 
         // If still connected, escalate to signal-based shutdown
         if self.connected.load(Ordering::SeqCst) {
-            if let Some(pid) = self.child_pid {
+            let pid = *self.child_pid.lock().unwrap();
+            if let Some(pid) = pid {
                 debug!("Process still running after stdin close, sending signals to pid {}", pid);
                 self.force_shutdown_by_pid(pid).await?;
             }
@@ -307,6 +327,16 @@ impl Transport for SubprocessCLITransport {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
+        // Apply working directory if configured
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
+        }
+
+        // Apply environment variables if configured
+        if !self.env.is_empty() {
+            cmd.envs(&self.env);
+        }
+
         let mut child = cmd.spawn().map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 ClawError::CliNotFound
@@ -317,7 +347,7 @@ impl Transport for SubprocessCLITransport {
 
         let child_pid = child.id();
         debug!("Process spawned with pid: {:?}", child_pid);
-        self.child_pid = child_pid;
+        *self.child_pid.lock().unwrap() = child_pid;
 
         // Take stdin/stdout/stderr handles
         let stdin = child.stdin.take().ok_or_else(|| {
@@ -387,7 +417,7 @@ impl Transport for SubprocessCLITransport {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<(), ClawError> {
+    async fn close(&self) -> Result<(), ClawError> {
         if !self.connected.load(Ordering::SeqCst) {
             debug!("Already closed");
             return Ok(());
@@ -466,7 +496,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_when_not_connected() {
-        let mut transport = SubprocessCLITransport::new(
+        let transport = SubprocessCLITransport::new(
             None,
             vec![],
         );

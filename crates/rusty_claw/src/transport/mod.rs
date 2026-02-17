@@ -163,7 +163,7 @@ pub trait Transport: Send + Sync {
     /// # Errors
     ///
     /// - [`ClawError::Process`] if the process exits with non-zero status
-    async fn close(&mut self) -> Result<(), ClawError>;
+    async fn close(&self) -> Result<(), ClawError>;
 
     /// Whether the transport is connected and ready
     ///
