@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rusty_claw",
     "crates/rusty_claw_macros",
+    "examples",
 ]
 
 [workspace.package]

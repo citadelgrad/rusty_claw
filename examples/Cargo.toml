@@ -1,0 +1,25 @@
+[package]
+name = "examples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rusty_claw = { path = "../crates/rusty_claw" }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[example]]
+name = "simple_query"
+path = "simple_query.rs"
+
+[[example]]
+name = "interactive_client"
+path = "interactive_client.rs"
+
+[[example]]
+name = "custom_tool"
+path = "custom_tool.rs"

@@ -68,12 +68,12 @@ pub enum PermissionMode {
 }
 
 impl PermissionMode {
-    /// Convert to CLI argument format
+    /// Convert to CLI argument format (camelCase, matching CLI's allowed choices)
     pub fn to_cli_arg(&self) -> &str {
         match self {
             PermissionMode::Default => "default",
-            PermissionMode::AcceptEdits => "accept-edits",
-            PermissionMode::BypassPermissions => "bypass-permissions",
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::BypassPermissions => "bypassPermissions",
             PermissionMode::Plan => "plan",
             PermissionMode::Allow => "allow",
             PermissionMode::Ask => "ask",
@@ -779,8 +779,8 @@ mod tests {
     #[test]
     fn test_permission_mode_to_cli_arg() {
         assert_eq!(PermissionMode::Default.to_cli_arg(), "default");
-        assert_eq!(PermissionMode::AcceptEdits.to_cli_arg(), "accept-edits");
-        assert_eq!(PermissionMode::BypassPermissions.to_cli_arg(), "bypass-permissions");
+        assert_eq!(PermissionMode::AcceptEdits.to_cli_arg(), "acceptEdits");
+        assert_eq!(PermissionMode::BypassPermissions.to_cli_arg(), "bypassPermissions");
         assert_eq!(PermissionMode::Plan.to_cli_arg(), "plan");
     }
 

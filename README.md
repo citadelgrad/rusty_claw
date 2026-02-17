@@ -180,23 +180,21 @@ match message? {
 
 ## Examples
 
-The `examples/` directory contains runnable demonstrations:
+The [`examples/`](examples/) directory contains runnable demonstrations:
 
 | Example | Description |
 |---------|-------------|
-| [simple_query.rs](crates/rusty_claw/examples/simple_query.rs) | Basic SDK usage with `query()` |
-| [interactive_client.rs](crates/rusty_claw/examples/interactive_client.rs) | Multi-turn conversations with `ClaudeClient` |
-| [custom_tool.rs](crates/rusty_claw/examples/custom_tool.rs) | Creating custom tools with `#[claw_tool]` |
-| [hooks_guardrails.rs](crates/rusty_claw/examples/hooks_guardrails.rs) | Implementing validation and monitoring hooks |
-| [subagent_usage.rs](crates/rusty_claw/examples/subagent_usage.rs) | Spawning and managing subagents |
+| [simple_query.rs](examples/simple_query.rs) | One-shot query with streaming responses |
+| [interactive_client.rs](examples/interactive_client.rs) | Multi-turn sessions with `ClaudeClient` |
+| [custom_tool.rs](examples/custom_tool.rs) | Custom MCP tools with `#[claw_tool]` macro |
 
 Run an example:
 
 ```bash
-cargo run --example simple_query -p rusty_claw
+cargo run -p examples --example simple_query
 ```
 
-Note: Examples that interact with Claude require a running Claude CLI with a valid API key.
+See [`examples/README.md`](examples/README.md) for details. All examples require the Claude CLI (>= 2.0.0) and a valid `ANTHROPIC_API_KEY`.
 
 ## Documentation
 
