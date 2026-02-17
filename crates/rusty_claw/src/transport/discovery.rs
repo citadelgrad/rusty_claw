@@ -186,10 +186,19 @@ impl CliDiscovery {
         // Split by : on Unix, ; on Windows
         let separator = if cfg!(windows) { ';' } else { ':' };
 
+        // On Windows, search for both "claude" and "claude.exe"
+        let names: &[&str] = if cfg!(windows) {
+            &["claude.exe", "claude.cmd", "claude"]
+        } else {
+            &["claude"]
+        };
+
         for dir in path_env.split(separator) {
-            let candidate = PathBuf::from(dir).join("claude");
-            if candidate.exists() {
-                return Ok(candidate);
+            for name in names {
+                let candidate = PathBuf::from(dir).join(name);
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
             }
         }
 
