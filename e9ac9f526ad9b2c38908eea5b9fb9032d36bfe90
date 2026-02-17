@@ -1,0 +1,34 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "e9ac9f526ad9b2c38908eea5b9fb9032d36bfe90",
+  "prompts": {
+    "61fd885d73217756": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5854cb2c-6062-4402-9ebf-d1db0653169d",
+        "model": "unknown"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 878,
+      "overriden_lines": 0
+    },
+    "dc65b6f84b9b51b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1bea218b-3057-4562-b82a-41ceafb82e5e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2068,
+      "overriden_lines": 0
+    }
+  }
+}
