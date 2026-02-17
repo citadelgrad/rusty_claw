@@ -150,6 +150,9 @@ pub async fn query(
     // Connect to CLI (discovers, validates version, spawns process)
     transport.connect().await?;
 
+    // Close stdin to signal no more input (one-shot query uses -p flag for prompt)
+    transport.end_input().await?;
+
     // Get the message receiver from transport
     let rx = transport.messages();
 
