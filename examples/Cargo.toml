@@ -23,3 +23,67 @@ path = "interactive_client.rs"
 [[example]]
 name = "custom_tool"
 path = "custom_tool.rs"
+
+[[example]]
+name = "session_resume"
+path = "session_resume.rs"
+
+[[example]]
+name = "file_checkpointing"
+path = "file_checkpointing.rs"
+
+[[example]]
+name = "system_prompts"
+path = "system_prompts.rs"
+
+[[example]]
+name = "tool_permissions"
+path = "tool_permissions.rs"
+
+[[example]]
+name = "partial_messages"
+path = "partial_messages.rs"
+
+[[example]]
+name = "agent_environment"
+path = "agent_environment.rs"
+
+[[example]]
+name = "advanced_config"
+path = "advanced_config.rs"
+
+[[example]]
+name = "external_mcp"
+path = "external_mcp.rs"
+
+[[example]]
+name = "image_tool_results"
+path = "image_tool_results.rs"
+
+[[example]]
+name = "interrupt_and_status"
+path = "interrupt_and_status.rs"
+
+[[example]]
+name = "rate_limit_handling"
+path = "rate_limit_handling.rs"
+
+[[example]]
+name = "advanced_tools"
+path = "advanced_tools.rs"
+
+[[example]]
+name = "hook_callbacks"
+path = "hook_callbacks.rs"
+
+[[example]]
+name = "transport_layer"
+path = "transport_layer.rs"
+
+[[example]]
+name = "hooks_guardrails"
+path = "hooks_guardrails.rs"
+
+[[example]]
+name = "subagent_usage"
+path = "subagent_usage.rs"
