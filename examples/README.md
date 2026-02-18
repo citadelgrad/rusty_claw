@@ -168,6 +168,62 @@ Done.
 
 ---
 
+## Learning Path
+
+After the three core examples above, explore these based on what you need:
+
+### Configuration & Options
+
+| Example | What you'll learn |
+|---------|-------------------|
+| `system_prompts` | Custom, preset, and appended system prompts |
+| `agent_environment` | Working directory, env vars, CLI path |
+| `advanced_config` | Settings sources, output format, beta features |
+| `partial_messages` | Stream incremental content blocks for real-time UX |
+
+### Permissions & Security
+
+| Example | What you'll learn |
+|---------|-------------------|
+| `tool_permissions` | Static allow/deny lists, `DefaultPermissionHandler`, custom `CanUseToolHandler` |
+| `hook_callbacks` | `HookCallback` trait, `HookInput`, `HookContext`, `HookResponse` builders |
+| `hooks_guardrails` | `HookHandler` for validation, logging, and rate limiting |
+
+### MCP Tools
+
+| Example | What you'll learn |
+|---------|-------------------|
+| `advanced_tools` | `Vec<T>`, `bool` params, doc comments, name inference in `#[claw_tool]` |
+| `image_tool_results` | `ToolContent::text()`, `ToolContent::image()`, multi-content results |
+| `external_mcp` | External MCP server config (documents intended API — `McpServerConfig` is a stub) |
+
+### Sessions & Runtime Control
+
+| Example | What you'll learn |
+|---------|-------------------|
+| `session_resume` | Resume, fork, and name sessions |
+| `file_checkpointing` | File snapshots, `rewind_files()` |
+| `interrupt_and_status` | `interrupt()`, `mcp_status()` |
+
+### Architecture & Internals
+
+| Example | What you'll learn |
+|---------|-------------------|
+| `transport_layer` | `CliDiscovery`, `SubprocessCLITransport`, `Transport` trait |
+| `rate_limit_handling` | `Message::RateLimitEvent`, `ClawError` variant matching |
+| `subagent_usage` | `AgentDefinition`, subagent hooks |
+
+### Offline Examples (no API key needed)
+
+These examples only inspect types and configuration — they don't connect to Claude:
+
+- `image_tool_results` — builds and serializes `ToolContent` and `ToolResult`
+- `hook_callbacks` — tests `HookCallback` implementations locally
+- `tool_permissions` — tests `DefaultPermissionHandler` decisions locally
+- `transport_layer` — discovers the CLI binary (no connection)
+
+---
+
 ## Troubleshooting
 
 ### "No messages received from Claude CLI"

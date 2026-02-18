@@ -187,6 +187,22 @@ The [`examples/`](examples/) directory contains runnable demonstrations:
 | [simple_query.rs](examples/simple_query.rs) | One-shot query with streaming responses |
 | [interactive_client.rs](examples/interactive_client.rs) | Multi-turn sessions with `ClaudeClient` |
 | [custom_tool.rs](examples/custom_tool.rs) | Custom MCP tools with `#[claw_tool]` macro |
+| [session_resume.rs](examples/session_resume.rs) | Resume, fork, and name sessions |
+| [system_prompts.rs](examples/system_prompts.rs) | Custom, preset, and append system prompts |
+| [tool_permissions.rs](examples/tool_permissions.rs) | Allow/deny lists and `CanUseToolHandler` |
+| [partial_messages.rs](examples/partial_messages.rs) | Stream incremental content blocks |
+| [advanced_tools.rs](examples/advanced_tools.rs) | `Vec<T>`, `bool` params, doc comments in `#[claw_tool]` |
+| [image_tool_results.rs](examples/image_tool_results.rs) | Text + image multi-content tool results |
+| [hook_callbacks.rs](examples/hook_callbacks.rs) | `HookCallback` trait, input/context/response |
+| [hooks_guardrails.rs](examples/hooks_guardrails.rs) | `HookHandler` for validation and logging |
+| [agent_environment.rs](examples/agent_environment.rs) | Working directory, env vars, CLI path |
+| [advanced_config.rs](examples/advanced_config.rs) | Settings sources, output format, betas |
+| [rate_limit_handling.rs](examples/rate_limit_handling.rs) | `RateLimitEvent` and `ClawError` matching |
+| [transport_layer.rs](examples/transport_layer.rs) | `CliDiscovery` and `Transport` trait |
+| [file_checkpointing.rs](examples/file_checkpointing.rs) | File snapshots and `rewind_files()` |
+| [interrupt_and_status.rs](examples/interrupt_and_status.rs) | `interrupt()` and `mcp_status()` |
+| [external_mcp.rs](examples/external_mcp.rs) | External MCP server config (stub) |
+| [subagent_usage.rs](examples/subagent_usage.rs) | Agent definitions and subagent hooks |
 
 Run an example:
 
