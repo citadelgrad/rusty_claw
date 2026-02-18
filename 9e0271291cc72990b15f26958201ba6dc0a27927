@@ -1,0 +1,35 @@
+crates/rusty_claw/src/control/messages.rs
+  d8a209e63d8f92c0 85-87,89,93,331
+crates/rusty_claw/examples/simple_query.rs
+  d8a209e63d8f92c0 84-85
+crates/rusty_claw/src/client.rs
+  d8a209e63d8f92c0 355-358
+crates/rusty_claw/src/messages.rs
+  d8a209e63d8f92c0 101-105,1020
+crates/rusty_claw/src/control/mod.rs
+  d8a209e63d8f92c0 233,481-511,514-516,769-770,787,812-813,838-839
+crates/rusty_claw/src/mcp_server.rs
+  d8a209e63d8f92c0 656
+examples/custom_tool.rs
+  d8a209e63d8f92c0 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "9e0271291cc72990b15f26958201ba6dc0a27927",
+  "prompts": {
+    "d8a209e63d8f92c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7a77e45c-5ed6-4829-b802-3bcf5da57a79",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 72,
+      "total_deletions": 39,
+      "accepted_lines": 62,
+      "overriden_lines": 0
+    }
+  }
+}
