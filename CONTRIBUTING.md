@@ -22,17 +22,23 @@ cargo build
 ```
 rusty_claw/
 ├── crates/
-│   ├── rusty_claw/          # Core SDK crate
+│   ├── rusty_claw/            # Core SDK crate
 │   │   ├── src/
-│   │   │   ├── client/      # ClaudeClient for interactive sessions
-│   │   │   ├── control/     # Claude Control Protocol (CCP)
-│   │   │   ├── hooks/       # Lifecycle event hooks
-│   │   │   ├── mcp/         # Model Context Protocol integration
-│   │   │   ├── permissions/ # Permission handling
-│   │   │   └── transport/   # Subprocess JSONL transport
-│   │   └── examples/        # Runnable examples
-│   └── rusty_claw_macros/   # #[claw_tool] proc macro crate
-└── docs/                    # Specifications and guides
+│   │   │   ├── client.rs      # ClaudeClient for interactive sessions
+│   │   │   ├── control/       # Claude Control Protocol (CCP)
+│   │   │   ├── hooks/         # Lifecycle event hooks
+│   │   │   ├── mcp_server.rs  # Model Context Protocol integration
+│   │   │   ├── messages.rs    # Message types and deserialization
+│   │   │   ├── options.rs     # Configuration options and builder
+│   │   │   ├── permissions/   # Permission handling
+│   │   │   ├── query.rs       # One-shot query API
+│   │   │   └── transport/     # Subprocess JSONL transport
+│   │   ├── examples/          # Crate-level examples
+│   │   ├── tests/             # Integration tests
+│   │   └── test_support/      # Mock CLI for testing
+│   └── rusty_claw_macros/     # #[claw_tool] proc macro crate
+├── examples/                  # Standalone example crate
+└── docs/                      # Specifications and guides
 ```
 
 ## Development Workflow
@@ -73,14 +79,17 @@ cargo doc --workspace --no-deps --open
 ### Running Examples
 
 ```bash
-cargo run --example simple_query -p rusty_claw
-cargo run --example custom_tool -p rusty_claw
-cargo run --example hooks_guardrails -p rusty_claw
-cargo run --example interactive_client -p rusty_claw
-cargo run --example subagent_usage -p rusty_claw
+# Standalone examples (examples/ crate)
+cargo run -p examples --example simple_query
+cargo run -p examples --example interactive_client
+cargo run -p examples --example custom_tool
+
+# Crate-level examples
+cargo run -p rusty_claw --example hooks_guardrails
+cargo run -p rusty_claw --example subagent_usage
 ```
 
-Note: `simple_query` and `interactive_client` require a running Claude CLI.
+Note: All examples require the Claude CLI (>= 2.0.0) and a valid `ANTHROPIC_API_KEY`.
 
 ## Making Changes
 

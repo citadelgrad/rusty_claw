@@ -351,7 +351,7 @@ let options = ClaudeAgentOptions::builder()
 
 | Method | Handler | Description |
 |--------|---------|-------------|
-| `initialize` | `handle_initialize` | Returns protocol version (`2024-11-05`), capabilities (`{ "tools": {} }`), and server info (name, version) |
+| `initialize` | `handle_initialize` | Returns protocol version (`2025-11-25`), capabilities (`{ "tools": {} }`), and server info (name, version) |
 | `tools/list` | `handle_tools_list` | Returns array of tool definitions (name, description, inputSchema) |
 | `tools/call` | `handle_tools_call` | Looks up tool by `params.name`, executes with `params.arguments`, returns result |
 | (anything else) | -- | Returns JSON-RPC error code `-32601` (Method not found) |
@@ -369,7 +369,7 @@ let options = ClaudeAgentOptions::builder()
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "protocolVersion": "2024-11-05",
+    "protocolVersion": "2025-11-25",
     "capabilities": { "tools": {} },
     "serverInfo": { "name": "my_server", "version": "1.0.0" }
   }
@@ -498,4 +498,4 @@ let options = ClaudeAgentOptions::builder()
 - [SPEC.md](SPEC.md) -- Section 7: MCP Integration (full protocol spec)
 - [QUICKSTART.md](QUICKSTART.md) -- Getting started guide
 - [HOOKS.md](HOOKS.md) -- Lifecycle hooks (can match on `mcp__*` tool names)
-- `crates/rusty_claw/examples/custom_tool.rs` -- Working example with three tools
+- `examples/custom_tool.rs` -- Working example with two tools

@@ -70,8 +70,36 @@
 //!
 //! # Example
 //!
-//! ```text
-//! // Coming soon: example of creating a simple agent
+//! ```rust,no_run
+//! use rusty_claw::prelude::*;
+//! use tokio_stream::StreamExt;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), ClawError> {
+//!     let options = ClaudeAgentOptions::builder()
+//!         .allowed_tools(vec!["Read".into(), "Edit".into(), "Bash".into()])
+//!         .permission_mode(PermissionMode::AcceptEdits)
+//!         .build();
+//!
+//!     let mut stream = query("Find and fix the bug in auth.py", Some(options)).await?;
+//!
+//!     while let Some(message) = stream.next().await {
+//!         match message? {
+//!             Message::Assistant(msg) => {
+//!                 for block in msg.message.content {
+//!                     if let ContentBlock::Text { text } = block {
+//!                         println!("{}", text);
+//!                     }
+//!                 }
+//!             }
+//!             Message::Result(ResultMessage::Success { result, .. }) => {
+//!                 println!("Done: {}", result);
+//!             }
+//!             _ => {}
+//!         }
+//!     }
+//!     Ok(())
+//! }
 //! ```
 //!
 //! # License

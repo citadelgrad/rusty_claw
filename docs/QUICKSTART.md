@@ -324,5 +324,5 @@ Now that you have created your first agent, learn how to extend its capabilities
 
 - **[Hooks](./HOOKS.md)** -- run custom code before or after tool calls, filter tool usage, and implement guardrails
 - **[SPEC.md](./SPEC.md)** -- full SDK specification covering transport, control protocol, MCP integration, and architecture
-- **[Examples](https://github.com/citadelgrad/rusty_claw/tree/main/crates/rusty_claw/examples)** -- working examples including simple queries, interactive clients, custom tools, subagents, and hook-based guardrails
+- **[Examples](https://github.com/citadelgrad/rusty_claw/tree/main/examples)** -- working examples including simple queries, interactive clients, and custom tools
 - **[docs.rs](https://docs.rs/rusty_claw)** -- full API reference documentation

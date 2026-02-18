@@ -84,21 +84,27 @@ rusty_claw/                         # Workspace root
 │   │   │   ├── messages.rs         # Message, ContentBlock, SystemMessage, etc.
 │   │   │   ├── options.rs          # ClaudeAgentOptions builder
 │   │   │   ├── error.rs            # ClawError hierarchy (thiserror)
-│   │   │   └── types.rs            # Shared type definitions
+│   │   │   └── query.rs            # One-shot query API
 │   │   ├── examples/
 │   │   │   ├── simple_query.rs
 │   │   │   ├── interactive_client.rs
 │   │   │   ├── custom_tool.rs
 │   │   │   ├── hooks_guardrails.rs
 │   │   │   └── subagent_usage.rs
-│   │   └── tests/
-│   │       ├── integration_test.rs
-│   │       ├── mock_cli.rs         # Mock CLI subprocess for testing
-│   │       └── fixtures/           # NDJSON message fixtures for replay
+│   │   ├── tests/
+│   │   │   ├── integration_test.rs
+│   │   │   └── fixtures/           # NDJSON message fixtures for replay
+│   │   └── test_support/
+│   │       └── mock_cli.rs         # Mock CLI subprocess for testing
 │   └── rusty_claw_macros/          # Proc macro crate
 │       ├── Cargo.toml
 │       └── src/
 │           └── lib.rs              # #[claw_tool] attribute macro
+├── examples/                       # Standalone example crate
+│   ├── Cargo.toml
+│   ├── simple_query.rs
+│   ├── interactive_client.rs
+│   └── custom_tool.rs
 ├── docs/                           # Documentation
 │   ├── QUICKSTART.md               # Step-by-step tutorial
 │   ├── HOOKS.md                    # Hook system guide
@@ -107,8 +113,7 @@ rusty_claw/                         # Workspace root
 │   ├── PERMISSIONS.md              # Permission modes and rules
 │   ├── SUBAGENTS.md                # Subagent definition and usage
 │   ├── MESSAGES.md                 # Message types reference
-│   ├── SPEC.md                     # Technical specification
-│   └── PRD.md                      # Product requirements
+│   └── SPEC.md                     # Technical specification
 └── CONTRIBUTING.md                 # Development guide
 ```
 
@@ -198,6 +203,19 @@ pub enum Message {
     Assistant(AssistantMessage),
     User(UserMessage),
     Result(ResultMessage),
+    ControlRequest {
+        request_id: String,
+        #[serde(flatten)]
+        request: ControlRequest,
+    },
+    ControlResponse {
+        request_id: String,
+        #[serde(flatten)]
+        response: ControlResponse,
+    },
+    RateLimitEvent(serde_json::Value),
+    #[serde(rename = "mcp_message")]
+    McpMessage(serde_json::Value),
 }
 
 /// System-level events (init, session info, compaction boundaries)
@@ -344,7 +362,7 @@ impl ControlProtocol {
 
 | Subtype | Purpose | Fields |
 |---------|---------|--------|
-| `initialize` | Handshake after connection | `hooks`, `agents`, `sdk_mcp_servers`, `permissions`, `can_use_tool` |
+| `initialize` | Handshake after connection | `hooks`, `agents`, `sdkMcpServers` (array of name strings), `permissions`, `can_use_tool` |
 | `interrupt` | Cancel current operation | (none) |
 | `set_permission_mode` | Change permission mode | `mode: String` |
 | `set_model` | Switch model | `model: String` |
@@ -432,12 +450,17 @@ pub enum SystemPrompt {
     Preset { preset: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
     Default,
     AcceptEdits,
     BypassPermissions,
     Plan,
+    Allow,
+    Ask,
+    Deny,
+    Custom,
 }
 
 #[derive(Debug, Clone)]
@@ -756,7 +779,7 @@ impl CliDiscovery {
 
 ### 10.2 Integration Tests
 
-- **Mock CLI process**: A small binary (`tests/mock_cli.rs`) that accepts the same arguments as the real CLI and replays canned NDJSON responses. Tests run against this mock.
+- **Mock CLI process**: A small binary (`test_support/mock_cli.rs`) that accepts the same arguments as the real CLI and replays canned NDJSON responses. Tests run against this mock.
 - **End-to-end with real CLI**: Gated behind `#[cfg(feature = "integration")]` and CI environment variable. Requires Claude Code CLI installed.
 
 ### 10.3 Test Fixtures

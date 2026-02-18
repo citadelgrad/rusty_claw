@@ -213,4 +213,4 @@ This generates the CLI argument `--enable-file-checkpointing`. Checkpoints are m
 
 - [SPEC.md](SPEC.md) -- Full SDK specification including transport and control protocol details
 - [HOOKS.md](HOOKS.md) -- Hook system for intercepting tool use and agent lifecycle events
-- [PRD.md](PRD.md) -- Product requirements document for rusty_claw
+- [MESSAGES.md](MESSAGES.md) -- Message types reference

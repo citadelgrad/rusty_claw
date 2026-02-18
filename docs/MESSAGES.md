@@ -65,6 +65,9 @@ pub enum Message {
         #[serde(flatten)]
         response: ControlResponse,
     },
+    RateLimitEvent(serde_json::Value),
+    #[serde(rename = "mcp_message")]
+    McpMessage(serde_json::Value),
 }
 ```
 
@@ -76,6 +79,8 @@ pub enum Message {
 | `Result` | `"result"` | CLI -> SDK | Final session outcome |
 | `ControlRequest` | `"control_request"` | Bidirectional | Control protocol request |
 | `ControlResponse` | `"control_response"` | Bidirectional | Control protocol response |
+| `RateLimitEvent` | `"rate_limit_event"` | CLI -> SDK | Rate limit information from the CLI |
+| `McpMessage` | `"mcp_message"` | CLI -> SDK | MCP message routed to SDK MCP server handler |
 
 The `ControlRequest` and `ControlResponse` variants use `#[serde(flatten)]` on their payload, so the `"subtype"` field from the inner enum appears at the top level alongside `"type"` and `"request_id"`.
 
@@ -659,6 +664,14 @@ fn handle_message(msg: Message) {
 
         Message::ControlResponse { request_id, response } => {
             println!("Control response {request_id}: {response:?}");
+        }
+
+        Message::RateLimitEvent(data) => {
+            println!("Rate limit event: {data}");
+        }
+
+        Message::McpMessage(data) => {
+            println!("MCP message: {data}");
         }
     }
 }
