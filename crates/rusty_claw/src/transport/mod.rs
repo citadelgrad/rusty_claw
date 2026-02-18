@@ -60,11 +60,11 @@ use tokio::sync::mpsc;
 
 use crate::error::ClawError;
 
-mod subprocess;
 mod discovery;
+mod subprocess;
 
-pub use subprocess::SubprocessCLITransport;
 pub use discovery::CliDiscovery;
+pub use subprocess::SubprocessCLITransport;
 
 /// Abstract transport for communicating with Claude Code CLI.
 ///

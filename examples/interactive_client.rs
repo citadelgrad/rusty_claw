@@ -89,7 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ContentBlock::ToolUse { name, input, .. } => {
                             println!("\n[calling tool: {} with {:?}]", name, input);
                         }
-                        ContentBlock::ToolResult { content, is_error, .. } => {
+                        ContentBlock::ToolResult {
+                            content, is_error, ..
+                        } => {
                             if *is_error {
                                 println!("[tool error: {}]", content);
                             }

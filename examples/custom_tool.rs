@@ -52,7 +52,9 @@ async fn word_count(text: String) -> ToolResult {
 #[claw_tool(name = "repeat", description = "Repeat a message N times")]
 async fn repeat(message: String, times: Option<i32>) -> ToolResult {
     let n = times.unwrap_or(1) as usize;
-    let output = std::iter::repeat(message).take(n).collect::<Vec<_>>().join("\n");
+    let output = std::iter::repeat_n(message, n)
+        .collect::<Vec<_>>()
+        .join("\n");
     ToolResult::text(output)
 }
 
@@ -94,7 +96,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 4: Register MCP handler BEFORE connect (CLI sends mcp_message during init)
     println!("\nConnecting to Claude CLI...");
     let mut client = ClaudeClient::new(options)?;
-    client.register_mcp_message_handler(Arc::new(registry)).await;
+    client
+        .register_mcp_message_handler(Arc::new(registry))
+        .await;
     client.connect().await?;
     println!("Connected.\n");
 

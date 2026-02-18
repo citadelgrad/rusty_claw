@@ -89,11 +89,7 @@ pub trait CanUseToolHandler: Send + Sync {
     /// * `Ok(true)` - Allow tool execution
     /// * `Ok(false)` - Deny tool execution
     /// * `Err(...)` - Handler error (tool will be denied)
-    async fn can_use_tool(
-        &self,
-        tool_name: &str,
-        tool_input: &Value,
-    ) -> Result<bool, ClawError>;
+    async fn can_use_tool(&self, tool_name: &str, tool_input: &Value) -> Result<bool, ClawError>;
 }
 
 /// Handler for hook callbacks
@@ -365,7 +361,11 @@ mod tests {
 
     #[async_trait]
     impl HookHandler for MockHookHandler {
-        async fn call(&self, _hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError> {
+        async fn call(
+            &self,
+            _hook_event: HookEvent,
+            hook_input: Value,
+        ) -> Result<Value, ClawError> {
             Ok(json!({ "echo": hook_input }))
         }
     }
@@ -382,14 +382,8 @@ mod tests {
     #[tokio::test]
     async fn test_can_use_tool_handler() {
         let handler = MockCanUseToolHandler;
-        assert_eq!(
-            handler.can_use_tool("Read", &json!({})).await.unwrap(),
-            true
-        );
-        assert_eq!(
-            handler.can_use_tool("Bash", &json!({})).await.unwrap(),
-            false
-        );
+        assert!(handler.can_use_tool("Read", &json!({})).await.unwrap());
+        assert!(!handler.can_use_tool("Bash", &json!({})).await.unwrap());
     }
 
     #[tokio::test]
@@ -408,10 +402,7 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_handler() {
         let handler = MockMcpHandler;
-        let result = handler
-            .handle("test_server", json!({}))
-            .await
-            .unwrap();
+        let result = handler.handle("test_server", json!({})).await.unwrap();
         assert_eq!(result["server"], "test_server");
     }
 

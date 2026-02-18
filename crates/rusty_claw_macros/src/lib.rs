@@ -425,7 +425,8 @@ fn validate_function(func: &ItemFn) -> syn::Result<()> {
             // Check if it's ToolResult or Result<ToolResult, _>
             let is_valid = matches_type_name(ty, "ToolResult")
                 || (is_result_type(ty)
-                    && result_ok_type(ty).is_some_and(|ok_ty| matches_type_name(ok_ty, "ToolResult")));
+                    && result_ok_type(ty)
+                        .is_some_and(|ok_ty| matches_type_name(ok_ty, "ToolResult")));
 
             if !is_valid {
                 return Err(syn::Error::new_spanned(
@@ -583,7 +584,13 @@ fn expand_claw_tool(attr: TokenStream2, input_fn: ItemFn) -> syn::Result<TokenSt
     let handler_impl = generate_handler(fn_name, &params, fn_body, returns_result)?;
 
     // Generate builder function
-    let builder_fn = generate_tool_builder(fn_name, &tool_name, &description, input_schema, &handler_name);
+    let builder_fn = generate_tool_builder(
+        fn_name,
+        &tool_name,
+        &description,
+        input_schema,
+        &handler_name,
+    );
 
     // Combine all generated code
     Ok(quote! {

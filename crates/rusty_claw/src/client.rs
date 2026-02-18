@@ -102,17 +102,17 @@
 //! # }
 //! ```
 
-use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::task::{Context, Poll};
-use tokio::sync::Mutex;
-use tokio::sync::mpsc;
-use tokio_stream::Stream;
 use serde_json::Value;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
+use tokio_stream::Stream;
 
+use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
 use crate::control::ControlProtocol;
-use crate::control::handlers::{HookHandler, McpMessageHandler, CanUseToolHandler};
 use crate::error::ClawError;
 use crate::messages::Message;
 use crate::options::{ClaudeAgentOptions, PermissionMode};
@@ -550,9 +550,10 @@ impl ClaudeClient {
     async fn write_message(&self, content: &str) -> Result<(), ClawError> {
         use serde_json::json;
 
-        let transport = self.transport.as_ref().ok_or_else(|| {
-            ClawError::Connection("Transport not available".to_string())
-        })?;
+        let transport = self
+            .transport
+            .as_ref()
+            .ok_or_else(|| ClawError::Connection("Transport not available".to_string()))?;
 
         // Format user message (matches Python SDK format)
         let message = json!({
@@ -621,15 +622,10 @@ impl ClaudeClient {
                                         response_val.clone(),
                                     ) {
                                         Ok(response) => {
-                                            control
-                                                .handle_response(&request_id, response)
-                                                .await;
+                                            control.handle_response(&request_id, response).await;
                                         }
                                         Err(e) => {
-                                            warn!(
-                                                "Failed to parse control response: {}",
-                                                e
-                                            );
+                                            warn!("Failed to parse control response: {}", e);
                                         }
                                     }
                                 }
@@ -646,9 +642,7 @@ impl ClaudeClient {
                                         request_val.clone(),
                                     ) {
                                         Ok(incoming) => {
-                                            control
-                                                .handle_incoming(&request_id, incoming)
-                                                .await;
+                                            control.handle_incoming(&request_id, incoming).await;
                                         }
                                         Err(e) => {
                                             warn!(
@@ -722,9 +716,10 @@ impl ClaudeClient {
 
         match response {
             ControlResponse::Success { .. } => Ok(()),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!("Interrupt failed: {}", error)))
-            }
+            ControlResponse::Error { error, .. } => Err(ClawError::ControlError(format!(
+                "Interrupt failed: {}",
+                error
+            ))),
         }
     }
 
@@ -823,9 +818,10 @@ impl ClaudeClient {
 
         match response {
             ControlResponse::Success { .. } => Ok(()),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!("Set model failed: {}", error)))
-            }
+            ControlResponse::Error { error, .. } => Err(ClawError::ControlError(format!(
+                "Set model failed: {}",
+                error
+            ))),
         }
     }
 
@@ -868,9 +864,10 @@ impl ClaudeClient {
 
         match response {
             ControlResponse::Success { data } => Ok(data),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!("MCP status query failed: {}", error)))
-            }
+            ControlResponse::Error { error, .. } => Err(ClawError::ControlError(format!(
+                "MCP status query failed: {}",
+                error
+            ))),
         }
     }
 
@@ -918,9 +915,10 @@ impl ClaudeClient {
 
         match response {
             ControlResponse::Success { .. } => Ok(()),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!("Rewind files failed: {}", error)))
-            }
+            ControlResponse::Error { error, .. } => Err(ClawError::ControlError(format!(
+                "Rewind files failed: {}",
+                error
+            ))),
         }
     }
 
@@ -1287,7 +1285,7 @@ mod tests {
     // Test handler registration when not connected doesn't panic
     #[tokio::test]
     async fn test_register_handlers_without_connect() {
-        use crate::control::handlers::{HookHandler, McpMessageHandler, CanUseToolHandler};
+        use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
         use crate::options::HookEvent;
         use async_trait::async_trait;
         use serde_json::{json, Value};
@@ -1332,8 +1330,14 @@ mod tests {
         let mut client = ClaudeClient::new(options).unwrap();
 
         // These should not panic even when not connected
-        client.register_can_use_tool_handler(Arc::new(TestPermHandler)).await;
-        client.register_hook("test".to_string(), Arc::new(TestHookHandler)).await;
-        client.register_mcp_message_handler(Arc::new(TestMcpHandler)).await;
+        client
+            .register_can_use_tool_handler(Arc::new(TestPermHandler))
+            .await;
+        client
+            .register_hook("test".to_string(), Arc::new(TestHookHandler))
+            .await;
+        client
+            .register_mcp_message_handler(Arc::new(TestMcpHandler))
+            .await;
     }
 }

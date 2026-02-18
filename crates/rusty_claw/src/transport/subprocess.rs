@@ -184,10 +184,7 @@ impl SubprocessCLITransport {
     }
 
     /// Spawn background task to read stderr for diagnostics
-    fn spawn_stderr_task(
-        stderr: tokio::process::ChildStderr,
-        buffer: Arc<Mutex<String>>,
-    ) {
+    fn spawn_stderr_task(stderr: tokio::process::ChildStderr, buffer: Arc<Mutex<String>>) {
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
@@ -243,7 +240,10 @@ impl SubprocessCLITransport {
         if self.connected.load(Ordering::SeqCst) {
             let pid = *self.child_pid.lock().unwrap();
             if let Some(pid) = pid {
-                debug!("Process still running after stdin close, sending signals to pid {}", pid);
+                debug!(
+                    "Process still running after stdin close, sending signals to pid {}",
+                    pid
+                );
                 self.force_shutdown_by_pid(pid).await?;
             }
         }
@@ -292,9 +292,7 @@ impl SubprocessCLITransport {
 impl Transport for SubprocessCLITransport {
     async fn connect(&mut self) -> Result<(), ClawError> {
         if self.connected.load(Ordering::SeqCst) {
-            return Err(ClawError::Connection(
-                "already connected".to_string(),
-            ));
+            return Err(ClawError::Connection("already connected".to_string()));
         }
 
         // Discover and validate CLI
@@ -308,7 +306,11 @@ impl Transport for SubprocessCLITransport {
 
                 // Validate version >= 2.0.0
                 let version = CliDiscovery::validate_version(&discovered).await?;
-                debug!("Using CLI at {} (version {})", discovered.display(), version);
+                debug!(
+                    "Using CLI at {} (version {})",
+                    discovered.display(),
+                    version
+                );
 
                 *guard = Some(discovered.clone());
                 discovered
@@ -363,15 +365,18 @@ impl Transport for SubprocessCLITransport {
         *self.child_pid.lock().unwrap() = child_pid;
 
         // Take stdin/stdout/stderr handles
-        let stdin = child.stdin.take().ok_or_else(|| {
-            ClawError::Connection("failed to capture stdin".to_string())
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            ClawError::Connection("failed to capture stdout".to_string())
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            ClawError::Connection("failed to capture stderr".to_string())
-        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ClawError::Connection("failed to capture stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ClawError::Connection("failed to capture stdout".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ClawError::Connection("failed to capture stderr".to_string()))?;
 
         // Set up message channel
         let (tx, rx) = mpsc::unbounded_channel();
@@ -383,11 +388,8 @@ impl Transport for SubprocessCLITransport {
         // Spawn background tasks
         Self::spawn_reader_task(stdout, tx, self.connected.clone());
         Self::spawn_stderr_task(stderr, self.stderr_buffer.clone());
-        let _monitor = Self::spawn_monitor_task(
-            child,
-            self.connected.clone(),
-            self.stderr_buffer.clone(),
-        );
+        let _monitor =
+            Self::spawn_monitor_task(child, self.connected.clone(), self.stderr_buffer.clone());
 
         self.connected.store(true, Ordering::SeqCst);
         debug!("Connection established");
@@ -401,9 +403,9 @@ impl Transport for SubprocessCLITransport {
         }
 
         let mut stdin_guard = self.stdin.lock().await;
-        let stdin = stdin_guard.as_mut().ok_or_else(|| {
-            ClawError::Connection("stdin already closed".to_string())
-        })?;
+        let stdin = stdin_guard
+            .as_mut()
+            .ok_or_else(|| ClawError::Connection("stdin already closed".to_string()))?;
 
         trace!("Writing {} bytes to stdin", message.len());
 
@@ -415,7 +417,10 @@ impl Transport for SubprocessCLITransport {
     }
 
     fn messages(&self) -> MessageReceiver {
-        self.messages_rx.lock().unwrap().take()
+        self.messages_rx
+            .lock()
+            .unwrap()
+            .take()
             .expect("messages() can only be called once per connection")
     }
 
@@ -475,20 +480,14 @@ mod tests {
 
     #[test]
     fn test_not_ready_before_connect() {
-        let transport = SubprocessCLITransport::new(
-            None,
-            vec![],
-        );
+        let transport = SubprocessCLITransport::new(None, vec![]);
 
         assert!(!transport.is_ready());
     }
 
     #[tokio::test]
     async fn test_write_when_not_connected() {
-        let transport = SubprocessCLITransport::new(
-            None,
-            vec![],
-        );
+        let transport = SubprocessCLITransport::new(None, vec![]);
 
         let result = transport.write(b"test").await;
         assert!(result.is_err());
@@ -497,10 +496,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_end_input_when_not_connected() {
-        let transport = SubprocessCLITransport::new(
-            None,
-            vec![],
-        );
+        let transport = SubprocessCLITransport::new(None, vec![]);
 
         // Should not error (idempotent)
         let result = transport.end_input().await;
@@ -509,10 +505,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_when_not_connected() {
-        let transport = SubprocessCLITransport::new(
-            None,
-            vec![],
-        );
+        let transport = SubprocessCLITransport::new(None, vec![]);
 
         // Should not error (idempotent)
         let result = transport.close().await;
@@ -526,20 +519,20 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).ok();
         let invalid_path = temp_dir.join("nonexistent_claude_binary");
 
-        let mut transport = SubprocessCLITransport::new(
-            Some(invalid_path),
-            vec![],
-        );
+        let mut transport = SubprocessCLITransport::new(Some(invalid_path), vec![]);
 
         let result = transport.connect().await;
 
         // If claude is installed elsewhere, it may be discovered via fallback
         // and the test might succeed. Only assert error if claude is not found.
-        if result.is_err() {
-            let err = result.unwrap_err();
+        if let Err(err) = result {
             assert!(
-                matches!(err, ClawError::CliNotFound | ClawError::InvalidCliVersion { .. }),
-                "Expected CliNotFound or InvalidCliVersion, got: {:?}", err
+                matches!(
+                    err,
+                    ClawError::CliNotFound | ClawError::InvalidCliVersion { .. }
+                ),
+                "Expected CliNotFound or InvalidCliVersion, got: {:?}",
+                err
             );
         }
         // Otherwise claude was found via discovery - test passes
@@ -548,10 +541,7 @@ mod tests {
     #[tokio::test]
     async fn test_double_connect_fails() {
         // Test double connect with None to trigger auto-discovery
-        let mut transport = SubprocessCLITransport::new(
-            None,
-            vec![],
-        );
+        let mut transport = SubprocessCLITransport::new(None, vec![]);
 
         // If claude is installed, test double connect
         if transport.connect().await.is_ok() {

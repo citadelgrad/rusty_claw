@@ -41,7 +41,7 @@ pub enum SystemPrompt {
     /// Named preset system prompt
     Preset {
         /// Preset name
-        preset: String
+        preset: String,
     },
 }
 
@@ -645,7 +645,10 @@ mod tests {
         assert_eq!(opts.max_turns, Some(5));
         assert_eq!(opts.model, Some("claude-sonnet-4".to_string()));
         assert_eq!(opts.allowed_tools.len(), 2);
-        assert!(matches!(opts.permission_mode, Some(PermissionMode::AcceptEdits)));
+        assert!(matches!(
+            opts.permission_mode,
+            Some(PermissionMode::AcceptEdits)
+        ));
     }
 
     #[test]
@@ -675,7 +678,10 @@ mod tests {
         assert_eq!(opts.allowed_tools, vec!["Read".to_string()]);
         assert_eq!(opts.disallowed_tools, vec!["Bash".to_string()]);
         assert!(matches!(opts.permission_mode, Some(PermissionMode::Plan)));
-        assert_eq!(opts.permission_prompt_tool_allowlist, vec!["Edit".to_string()]);
+        assert_eq!(
+            opts.permission_prompt_tool_allowlist,
+            vec!["Edit".to_string()]
+        );
         assert_eq!(opts.resume, Some("session-123".to_string()));
         assert!(opts.fork_session);
         assert_eq!(opts.session_name, Some("test-session".to_string()));
@@ -732,7 +738,9 @@ mod tests {
     #[test]
     fn test_to_cli_args_system_prompt_preset() {
         let opts = ClaudeAgentOptions::builder()
-            .system_prompt(SystemPrompt::Preset { preset: "assistant".to_string() })
+            .system_prompt(SystemPrompt::Preset {
+                preset: "assistant".to_string(),
+            })
             .build();
 
         let args = opts.to_cli_args("test");
@@ -810,7 +818,10 @@ mod tests {
     fn test_permission_mode_to_cli_arg() {
         assert_eq!(PermissionMode::Default.to_cli_arg(), "default");
         assert_eq!(PermissionMode::AcceptEdits.to_cli_arg(), "acceptEdits");
-        assert_eq!(PermissionMode::BypassPermissions.to_cli_arg(), "bypassPermissions");
+        assert_eq!(
+            PermissionMode::BypassPermissions.to_cli_arg(),
+            "bypassPermissions"
+        );
         assert_eq!(PermissionMode::Plan.to_cli_arg(), "plan");
     }
 
@@ -831,9 +842,7 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("KEY".to_string(), "value".to_string());
 
-        let opts = ClaudeAgentOptions::builder()
-            .env(env.clone())
-            .build();
+        let opts = ClaudeAgentOptions::builder().env(env.clone()).build();
 
         assert_eq!(opts.env, env);
     }

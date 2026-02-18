@@ -108,11 +108,7 @@ fn load_fixture(path: &PathBuf) -> io::Result<Vec<String>> {
 
         // Validate JSON before adding to output
         if let Err(err) = serde_json::from_str::<serde_json::Value>(&line) {
-            eprintln!(
-                "ERROR: Invalid JSON at line {}: {}",
-                line_num + 1,
-                err
-            );
+            eprintln!("ERROR: Invalid JSON at line {}: {}", line_num + 1, err);
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Invalid JSON at line {}", line_num + 1),

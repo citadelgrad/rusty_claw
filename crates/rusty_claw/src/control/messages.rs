@@ -343,7 +343,11 @@ mod tests {
         let parsed: ControlRequest = serde_json::from_str(&json).unwrap();
 
         match parsed {
-            ControlRequest::Initialize { hooks, agents, sdk_mcp_servers } => {
+            ControlRequest::Initialize {
+                hooks,
+                agents,
+                sdk_mcp_servers,
+            } => {
                 assert!(hooks.is_empty());
                 assert!(agents.is_empty());
                 assert!(sdk_mcp_servers.is_empty());
@@ -495,7 +499,10 @@ mod tests {
         let parsed: IncomingControlRequest = serde_json::from_str(&json).unwrap();
 
         match parsed {
-            IncomingControlRequest::CanUseTool { tool_name, tool_input } => {
+            IncomingControlRequest::CanUseTool {
+                tool_name,
+                tool_input,
+            } => {
                 assert_eq!(tool_name, "Read");
                 assert_eq!(tool_input["file_path"], "/tmp/test.txt");
             }

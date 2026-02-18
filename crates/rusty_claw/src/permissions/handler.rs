@@ -304,7 +304,11 @@ mod tests {
     async fn test_complex_allowlist_denylist() {
         let handler = DefaultPermissionHandler::builder()
             .mode(PermissionMode::Ask)
-            .allowed_tools(vec!["bash".to_string(), "read".to_string(), "write".to_string()])
+            .allowed_tools(vec![
+                "bash".to_string(),
+                "read".to_string(),
+                "write".to_string(),
+            ])
             .disallowed_tools(vec!["write".to_string()])
             .build();
 

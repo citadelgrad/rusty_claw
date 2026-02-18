@@ -156,18 +156,15 @@ pub async fn query(
     let rx = transport.messages();
 
     // Convert receiver to stream and parse Message structs
-    let stream = UnboundedReceiverStream::new(rx)
-        .map(|result| {
-            result.and_then(|value| {
-                let raw = value.to_string();
-                serde_json::from_value::<Message>(value).map_err(|e| {
-                    ClawError::MessageParse {
-                        reason: e.to_string(),
-                        raw,
-                    }
-                })
+    let stream = UnboundedReceiverStream::new(rx).map(|result| {
+        result.and_then(|value| {
+            let raw = value.to_string();
+            serde_json::from_value::<Message>(value).map_err(|e| ClawError::MessageParse {
+                reason: e.to_string(),
+                raw,
             })
-        });
+        })
+    });
 
     // Wrap in QueryStream to ensure transport outlives the stream
     Ok(QueryStream::new(transport, stream))

@@ -249,7 +249,10 @@ mod tests {
         let json = serde_json::to_value(&response).unwrap();
 
         // Default should serialize to minimal JSON
-        assert!(!json.as_object().unwrap().contains_key("permission_decision"));
+        assert!(!json
+            .as_object()
+            .unwrap()
+            .contains_key("permission_decision"));
         assert!(!json
             .as_object()
             .unwrap()

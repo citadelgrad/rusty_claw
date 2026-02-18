@@ -182,6 +182,12 @@ impl PendingRequests {
     pub async fn len(&self) -> usize {
         self.inner.lock().await.len()
     }
+
+    /// Check if there are no pending requests
+    #[cfg(test)]
+    pub async fn is_empty(&self) -> bool {
+        self.inner.lock().await.is_empty()
+    }
 }
 
 impl Default for PendingRequests {

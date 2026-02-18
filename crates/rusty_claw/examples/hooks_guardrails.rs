@@ -78,13 +78,8 @@ impl HookHandler for GuardrailHook {
                     println!("    Path: {}", path);
 
                     // Block writes to sensitive system files
-                    let blocked_paths = vec![
-                        "/etc/passwd",
-                        "/etc/shadow",
-                        "/boot/",
-                        "/sys/",
-                        "/proc/",
-                    ];
+                    let blocked_paths =
+                        vec!["/etc/passwd", "/etc/shadow", "/boot/", "/sys/", "/proc/"];
 
                     for blocked in blocked_paths {
                         if path.starts_with(blocked) {

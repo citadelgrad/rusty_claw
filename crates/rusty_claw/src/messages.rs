@@ -301,8 +301,7 @@ impl<'de> serde::Deserialize<'de> for ToolInfo {
                 input_schema: None,
             }),
             serde_json::Value::Object(_) => {
-                let obj: ToolInfoObj = serde_json::from_value(value)
-                    .map_err(de::Error::custom)?;
+                let obj: ToolInfoObj = serde_json::from_value(value).map_err(de::Error::custom)?;
                 Ok(ToolInfo {
                     name: obj.name,
                     description: obj.description,
@@ -400,7 +399,10 @@ mod tests {
             Message::Assistant(assistant_msg) => {
                 assert_eq!(assistant_msg.message.role, "assistant");
                 assert_eq!(assistant_msg.message.content.len(), 1);
-                assert_eq!(assistant_msg.parent_tool_use_id, Some("tool_123".to_string()));
+                assert_eq!(
+                    assistant_msg.parent_tool_use_id,
+                    Some("tool_123".to_string())
+                );
                 assert_eq!(assistant_msg.duration_ms, Some(250));
             }
             _ => panic!("Expected Assistant message"),
@@ -758,7 +760,12 @@ mod tests {
             .enumerate()
             .map(|(i, line)| {
                 let line = line.unwrap_or_else(|e| {
-                    panic!("Failed to read line {} from fixture '{}': {}", i + 1, name, e)
+                    panic!(
+                        "Failed to read line {} from fixture '{}': {}",
+                        i + 1,
+                        name,
+                        e
+                    )
                 });
                 serde_json::from_str(&line).unwrap_or_else(|e| {
                     panic!(
@@ -1001,7 +1008,12 @@ mod tests {
     #[test]
     fn test_all_fixtures_valid() {
         // Meta test: verify all fixtures parse without errors
-        let fixtures = ["simple_query", "tool_use", "error_response", "thinking_content"];
+        let fixtures = [
+            "simple_query",
+            "tool_use",
+            "error_response",
+            "thinking_content",
+        ];
 
         for fixture_name in &fixtures {
             let messages = load_fixture(fixture_name);
@@ -1014,10 +1026,14 @@ mod tests {
             // Verify all messages have valid types
             for (i, msg) in messages.iter().enumerate() {
                 match msg {
-                    Message::System(_) | Message::Assistant(_) | Message::User(_)
-                    | Message::Result(_) | Message::ControlRequest { .. }
+                    Message::System(_)
+                    | Message::Assistant(_)
+                    | Message::User(_)
+                    | Message::Result(_)
+                    | Message::ControlRequest { .. }
                     | Message::ControlResponse { .. }
-                    | Message::RateLimitEvent(_) | Message::McpMessage(_) => {}
+                    | Message::RateLimitEvent(_)
+                    | Message::McpMessage(_) => {}
                 }
                 // If we got here, the message is valid
                 let _ = i; // Use i to avoid unused warning

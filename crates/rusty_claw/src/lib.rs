@@ -200,7 +200,9 @@ pub mod prelude {
     pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
     pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
-    pub use crate::hooks::{HookCallback, HookContext, HookInput, HookResponse, PermissionDecision};
+    pub use crate::hooks::{
+        HookCallback, HookContext, HookInput, HookResponse, PermissionDecision,
+    };
     pub use crate::mcp_server::{
         SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent, ToolHandler, ToolResult,
     };
@@ -208,7 +210,9 @@ pub mod prelude {
         ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
-    pub use crate::options::{ClaudeAgentOptions, HookEvent, HookMatcher, PermissionMode, SystemPrompt};
+    pub use crate::options::{
+        ClaudeAgentOptions, HookEvent, HookMatcher, PermissionMode, SystemPrompt,
+    };
     pub use crate::permissions::DefaultPermissionHandler;
     pub use crate::query::query;
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};

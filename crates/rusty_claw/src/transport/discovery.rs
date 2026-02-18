@@ -153,19 +153,19 @@ impl CliDiscovery {
 
         // Parse version from stdout (format: "X.Y.Z (Claude Code)")
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let version_str = stdout
-            .split_whitespace()
-            .next()
-            .ok_or_else(|| ClawError::InvalidCliVersion {
-                version: "empty output".to_string(),
-            })?;
+        let version_str =
+            stdout
+                .split_whitespace()
+                .next()
+                .ok_or_else(|| ClawError::InvalidCliVersion {
+                    version: "empty output".to_string(),
+                })?;
 
         // Parse semantic version
-        let version = semver::Version::parse(version_str).map_err(|_| {
-            ClawError::InvalidCliVersion {
+        let version =
+            semver::Version::parse(version_str).map_err(|_| ClawError::InvalidCliVersion {
                 version: version_str.to_string(),
-            }
-        })?;
+            })?;
 
         // Ensure version >= 2.0.0
         let min_version = semver::Version::new(2, 0, 0);
@@ -254,7 +254,7 @@ mod tests {
         // This should either find claude in PATH or fail with CliNotFound
         // We can't guarantee claude is in PATH in test environment
         match result {
-            Ok(_) => {} // Found in PATH/common locations
+            Ok(_) => {}                       // Found in PATH/common locations
             Err(ClawError::CliNotFound) => {} // Expected if no CLI installed
             Err(e) => panic!("Unexpected error: {}", e),
         }

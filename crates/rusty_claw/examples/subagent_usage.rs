@@ -24,11 +24,7 @@ async fn main() {
         description: "Research agent specialized in code analysis".to_string(),
         prompt: "You are a research assistant focused on analyzing code and finding patterns."
             .to_string(),
-        tools: vec![
-            "Read".to_string(),
-            "Grep".to_string(),
-            "Glob".to_string(),
-        ],
+        tools: vec!["Read".to_string(), "Grep".to_string(), "Glob".to_string()],
         model: Some("claude-sonnet-4".to_string()),
     };
 
@@ -36,11 +32,7 @@ async fn main() {
     let writer = AgentDefinition {
         description: "Writing agent specialized in documentation".to_string(),
         prompt: "You are a technical writer focused on creating clear documentation.".to_string(),
-        tools: vec![
-            "Read".to_string(),
-            "Write".to_string(),
-            "Edit".to_string(),
-        ],
+        tools: vec!["Read".to_string(), "Write".to_string(), "Edit".to_string()],
         model: None, // Uses default model
     };
 
@@ -67,19 +59,13 @@ async fn main() {
     let subagent_start_hook = HookMatcher {
         tool_name: Some("Bash".to_string()),
     };
-    hooks.insert(
-        HookEvent::SubagentStart,
-        vec![subagent_start_hook],
-    );
+    hooks.insert(HookEvent::SubagentStart, vec![subagent_start_hook]);
 
     // SubagentStop hook - matches Bash tool when subagent stops
     let subagent_stop_hook = HookMatcher {
         tool_name: Some("Bash".to_string()),
     };
-    hooks.insert(
-        HookEvent::SubagentStop,
-        vec![subagent_stop_hook],
-    );
+    hooks.insert(HookEvent::SubagentStop, vec![subagent_stop_hook]);
 
     println!("Registered {} hook events:", hooks.len());
     for (event, matchers) in &hooks {

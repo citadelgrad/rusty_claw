@@ -79,7 +79,10 @@ async fn test_mock_cli_help() {
 async fn test_mock_cli_replay_simple() {
     // Test that mock CLI replays fixture correctly
     let mut child = Command::new(mock_cli_path())
-        .arg(format!("--fixture={}", fixture_path("simple_query.ndjson").display()))
+        .arg(format!(
+            "--fixture={}",
+            fixture_path("simple_query.ndjson").display()
+        ))
         .arg("--delay=0") // No delay for faster tests
         .stdout(Stdio::piped())
         .spawn()
@@ -123,7 +126,10 @@ async fn test_mock_cli_missing_fixture() {
 async fn test_parse_simple_query_fixture() {
     // Test parsing messages from simple_query fixture
     let mut child = Command::new(mock_cli_path())
-        .arg(format!("--fixture={}", fixture_path("simple_query.ndjson").display()))
+        .arg(format!(
+            "--fixture={}",
+            fixture_path("simple_query.ndjson").display()
+        ))
         .arg("--delay=0")
         .stdout(Stdio::piped())
         .spawn()
@@ -155,10 +161,8 @@ async fn test_parse_simple_query_fixture() {
     }
 
     // Verify result message
-    if let Message::Result(rusty_claw::messages::ResultMessage::Success {
-        num_turns,
-        ..
-    }) = &messages[2]
+    if let Message::Result(rusty_claw::messages::ResultMessage::Success { num_turns, .. }) =
+        &messages[2]
     {
         assert_eq!(*num_turns, Some(1));
     } else {
@@ -170,7 +174,10 @@ async fn test_parse_simple_query_fixture() {
 async fn test_parse_tool_use_fixture() {
     // Test parsing messages from tool_use fixture
     let mut child = Command::new(mock_cli_path())
-        .arg(format!("--fixture={}", fixture_path("tool_use.ndjson").display()))
+        .arg(format!(
+            "--fixture={}",
+            fixture_path("tool_use.ndjson").display()
+        ))
         .arg("--delay=0")
         .stdout(Stdio::piped())
         .spawn()
@@ -209,7 +216,10 @@ async fn test_parse_tool_use_fixture() {
 async fn test_parse_error_response_fixture() {
     // Test parsing error response
     let mut child = Command::new(mock_cli_path())
-        .arg(format!("--fixture={}", fixture_path("error_response.ndjson").display()))
+        .arg(format!(
+            "--fixture={}",
+            fixture_path("error_response.ndjson").display()
+        ))
         .arg("--delay=0")
         .stdout(Stdio::piped())
         .spawn()
@@ -288,7 +298,10 @@ async fn test_parse_thinking_blocks_fixture() {
 async fn test_transport_creation() {
     // Test creating transport with mock CLI
     let args = vec![
-        format!("--fixture={}", fixture_path("simple_query.ndjson").display()),
+        format!(
+            "--fixture={}",
+            fixture_path("simple_query.ndjson").display()
+        ),
         "--output-format=stream-json".to_string(),
     ];
 
@@ -302,7 +315,10 @@ async fn test_transport_creation() {
 async fn test_transport_connect_validation() {
     // Test that transport performs version validation
     let args = vec![
-        format!("--fixture={}", fixture_path("simple_query.ndjson").display()),
+        format!(
+            "--fixture={}",
+            fixture_path("simple_query.ndjson").display()
+        ),
         "--output-format=stream-json".to_string(),
     ];
 
@@ -413,8 +429,14 @@ async fn test_initialize_with_agents() {
 
     assert_eq!(json["subtype"], "initialize");
     assert!(json["agents"].is_object());
-    assert_eq!(json["agents"]["researcher"]["description"], "Research agent");
-    assert_eq!(json["agents"]["researcher"]["prompt"], "You are a researcher");
+    assert_eq!(
+        json["agents"]["researcher"]["description"],
+        "Research agent"
+    );
+    assert_eq!(
+        json["agents"]["researcher"]["prompt"],
+        "You are a researcher"
+    );
     assert_eq!(json["agents"]["researcher"]["tools"], json!(["Read"]));
     assert_eq!(json["agents"]["researcher"]["model"], "claude-sonnet-4");
 }
@@ -477,7 +499,10 @@ async fn test_initialize_multiple_agents() {
     assert!(json["agents"]["writer"].is_object());
 
     // Verify researcher fields
-    assert_eq!(json["agents"]["researcher"]["description"], "Research agent");
+    assert_eq!(
+        json["agents"]["researcher"]["description"],
+        "Research agent"
+    );
     assert_eq!(json["agents"]["researcher"]["model"], "claude-sonnet-4");
 
     // Verify writer fields
@@ -537,7 +562,8 @@ async fn test_agent_definition_round_trip() {
     };
 
     let json = serde_json::to_value(&original).expect("Failed to serialize");
-    let deserialized: AgentDefinition = serde_json::from_value(json).expect("Failed to deserialize");
+    let deserialized: AgentDefinition =
+        serde_json::from_value(json).expect("Failed to deserialize");
 
     assert_eq!(deserialized.description, original.description);
     assert_eq!(deserialized.prompt, original.prompt);

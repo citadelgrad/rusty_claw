@@ -593,7 +593,10 @@ impl SdkMcpServerImpl {
     /// assert_eq!(tools.len(), 2);
     /// ```
     pub fn list_tools(&self) -> Vec<Value> {
-        self.tools.values().map(|t| t.to_tool_definition()).collect()
+        self.tools
+            .values()
+            .map(|t| t.to_tool_definition())
+            .collect()
     }
 
     /// Handle a JSON-RPC request
@@ -940,7 +943,12 @@ mod tests {
         let handler = Arc::new(MockHandler {
             response: "Test".to_string(),
         });
-        let tool = SdkMcpTool::new("test_tool", "Test description", json!({"type": "object"}), handler);
+        let tool = SdkMcpTool::new(
+            "test_tool",
+            "Test description",
+            json!({"type": "object"}),
+            handler,
+        );
         assert_eq!(tool.name, "test_tool");
         assert_eq!(tool.description, "Test description");
     }
@@ -950,7 +958,12 @@ mod tests {
         let handler = Arc::new(MockHandler {
             response: "Test".to_string(),
         });
-        let tool = SdkMcpTool::new("test_tool", "Test description", json!({"type": "object"}), handler);
+        let tool = SdkMcpTool::new(
+            "test_tool",
+            "Test description",
+            json!({"type": "object"}),
+            handler,
+        );
         let def = tool.to_tool_definition();
         assert_eq!(def["name"], "test_tool");
         assert_eq!(def["description"], "Test description");
@@ -996,8 +1009,18 @@ mod tests {
         let handler = Arc::new(MockHandler {
             response: "Test".to_string(),
         });
-        server.register_tool(SdkMcpTool::new("tool1", "Test 1", json!({"type": "object"}), handler.clone()));
-        server.register_tool(SdkMcpTool::new("tool2", "Test 2", json!({"type": "object"}), handler));
+        server.register_tool(SdkMcpTool::new(
+            "tool1",
+            "Test 1",
+            json!({"type": "object"}),
+            handler.clone(),
+        ));
+        server.register_tool(SdkMcpTool::new(
+            "tool2",
+            "Test 2",
+            json!({"type": "object"}),
+            handler,
+        ));
         let tools = server.list_tools();
         assert_eq!(tools.len(), 2);
     }
@@ -1022,7 +1045,12 @@ mod tests {
         let handler = Arc::new(MockHandler {
             response: "Test".to_string(),
         });
-        server.register_tool(SdkMcpTool::new("tool1", "Test", json!({"type": "object"}), handler));
+        server.register_tool(SdkMcpTool::new(
+            "tool1",
+            "Test",
+            json!({"type": "object"}),
+            handler,
+        ));
 
         let request = json!({
             "jsonrpc": "2.0",
@@ -1039,7 +1067,12 @@ mod tests {
         let handler = Arc::new(MockHandler {
             response: "Result".to_string(),
         });
-        server.register_tool(SdkMcpTool::new("tool1", "Test", json!({"type": "object"}), handler));
+        server.register_tool(SdkMcpTool::new(
+            "tool1",
+            "Test",
+            json!({"type": "object"}),
+            handler,
+        ));
 
         let request = json!({
             "jsonrpc": "2.0",

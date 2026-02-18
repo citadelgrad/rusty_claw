@@ -230,17 +230,19 @@ impl ControlProtocol {
         let request = ControlRequest::Initialize {
             hooks: options.hooks.clone(),
             agents: options.agents.clone(),
-            sdk_mcp_servers: options.sdk_mcp_servers.iter().map(|s| s.name.clone()).collect(),
+            sdk_mcp_servers: options
+                .sdk_mcp_servers
+                .iter()
+                .map(|s| s.name.clone())
+                .collect(),
         };
 
         match self.request(request).await? {
             ControlResponse::Success { .. } => Ok(()),
-            ControlResponse::Error { error, .. } => {
-                Err(ClawError::ControlError(format!(
-                    "Initialization failed: {}",
-                    error
-                )))
-            }
+            ControlResponse::Error { error, .. } => Err(ClawError::ControlError(format!(
+                "Initialization failed: {}",
+                error
+            ))),
         }
     }
 
@@ -503,10 +505,9 @@ impl ControlProtocol {
                     }
                 });
                 // Merge extra fields
-                if let (Some(resp_obj), Some(extra_obj)) = (
-                    resp["response"].as_object_mut(),
-                    extra.as_object(),
-                ) {
+                if let (Some(resp_obj), Some(extra_obj)) =
+                    (resp["response"].as_object_mut(), extra.as_object())
+                {
                     for (k, v) in extra_obj {
                         resp_obj.insert(k.clone(), v.clone());
                     }
@@ -541,35 +542,23 @@ mod tests {
     use tokio::sync::Mutex as TokioMutex;
 
     // Mock transport for testing
+    #[allow(clippy::type_complexity)]
     struct MockTransport {
         sent: Arc<TokioMutex<Vec<Vec<u8>>>>,
         receiver: Arc<TokioMutex<Option<mpsc::UnboundedReceiver<Result<Value, ClawError>>>>>,
-        sender: mpsc::UnboundedSender<Result<Value, ClawError>>,
     }
 
     impl MockTransport {
         fn new() -> Self {
-            let (sender, receiver) = mpsc::unbounded_channel();
+            let (_sender, receiver) = mpsc::unbounded_channel();
             Self {
                 sent: Arc::new(TokioMutex::new(Vec::new())),
                 receiver: Arc::new(TokioMutex::new(Some(receiver))),
-                sender,
             }
         }
 
         async fn get_sent(&self) -> Vec<Vec<u8>> {
             self.sent.lock().await.clone()
-        }
-
-        fn simulate_response(&self, request_id: &str, response: ControlResponse) {
-            // Put request_id inside the response object (matches real CLI format)
-            let mut resp_value = serde_json::to_value(&response).unwrap();
-            resp_value["request_id"] = serde_json::Value::String(request_id.to_string());
-            let msg = json!({
-                "type": "control_response",
-                "response": resp_value,
-            });
-            self.sender.send(Ok(msg)).unwrap();
         }
     }
 
@@ -621,7 +610,11 @@ mod tests {
 
     #[async_trait]
     impl HookHandler for MockHookHandler {
-        async fn call(&self, _hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError> {
+        async fn call(
+            &self,
+            _hook_event: HookEvent,
+            hook_input: Value,
+        ) -> Result<Value, ClawError> {
             Ok(json!({ "echo": hook_input }))
         }
     }
@@ -656,15 +649,20 @@ mod tests {
             let request_id = msg["request_id"].as_str().unwrap().to_string();
 
             // Simulate CLI response by directly calling handle_response
-            control_for_response.handle_response(
-                &request_id,
-                ControlResponse::Success {
-                    data: json!({ "result": "ok" }),
-                },
-            ).await;
+            control_for_response
+                .handle_response(
+                    &request_id,
+                    ControlResponse::Success {
+                        data: json!({ "result": "ok" }),
+                    },
+                )
+                .await;
         });
 
-        let response = control_clone.request(ControlRequest::Interrupt).await.unwrap();
+        let response = control_clone
+            .request(ControlRequest::Interrupt)
+            .await
+            .unwrap();
 
         match response {
             ControlResponse::Success { data } => {
@@ -693,10 +691,9 @@ mod tests {
             let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
             let request_id = msg["request_id"].as_str().unwrap().to_string();
 
-            control_for_response.handle_response(
-                &request_id,
-                ControlResponse::Success { data: json!({}) },
-            ).await;
+            control_for_response
+                .handle_response(&request_id, ControlResponse::Success { data: json!({}) })
+                .await;
         });
 
         let options = ClaudeAgentOptions::default();
@@ -722,13 +719,15 @@ mod tests {
             let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
             let request_id = msg["request_id"].as_str().unwrap().to_string();
 
-            control_for_response.handle_response(
-                &request_id,
-                ControlResponse::Error {
-                    error: "Bad config".to_string(),
-                    extra: json!({}),
-                },
-            ).await;
+            control_for_response
+                .handle_response(
+                    &request_id,
+                    ControlResponse::Error {
+                        error: "Bad config".to_string(),
+                        extra: json!({}),
+                    },
+                )
+                .await;
         });
 
         let options = ClaudeAgentOptions::default();
@@ -763,7 +762,10 @@ mod tests {
         assert_eq!(sent.len(), 1);
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
         assert_eq!(msg["type"], "control_response");
-        assert!(msg.get("request_id").is_none(), "request_id should NOT be at top level");
+        assert!(
+            msg.get("request_id").is_none(),
+            "request_id should NOT be at top level"
+        );
         assert_eq!(msg["response"]["subtype"], "success");
         assert_eq!(msg["response"]["request_id"], "req_1");
         // Data is nested inside response.response (matches Python SDK format)
@@ -836,6 +838,9 @@ mod tests {
         assert_eq!(msg["response"]["subtype"], "success");
         assert_eq!(msg["response"]["request_id"], "req_1");
         // MCP result is wrapped in response.response.mcp_response (Python SDK format)
-        assert_eq!(msg["response"]["response"]["mcp_response"]["server"], "test_server");
+        assert_eq!(
+            msg["response"]["response"]["mcp_response"]["server"],
+            "test_server"
+        );
     }
 }

@@ -129,11 +129,7 @@ fn test_boolean_parameter() {
 #[test]
 fn test_numeric_types() {
     #[claw_tool]
-    async fn numeric_tool(
-        i: i32,
-        u: u32,
-        f: f64,
-    ) -> ToolResult {
+    async fn numeric_tool(i: i32, u: u32, f: f64) -> ToolResult {
         ToolResult::text(format!("{} {} {}", i, u, f))
     }
 
@@ -177,11 +173,14 @@ async fn test_tool_execution_multiple_params() {
     }
 
     let tool = calculate();
-    let result = tool.execute(json!({
-        "x": 10,
-        "y": 5,
-        "op": "add"
-    })).await.unwrap();
+    let result = tool
+        .execute(json!({
+            "x": 10,
+            "y": 5,
+            "op": "add"
+        }))
+        .await
+        .unwrap();
 
     match &result.content[0] {
         ToolContent::Text { text } => assert_eq!(text, "15"),
@@ -199,10 +198,13 @@ async fn test_tool_execution_optional_provided() {
     }
 
     let tool = search_with_limit();
-    let result = tool.execute(json!({
-        "query": "test",
-        "limit": 20
-    })).await.unwrap();
+    let result = tool
+        .execute(json!({
+            "query": "test",
+            "limit": 20
+        }))
+        .await
+        .unwrap();
 
     match &result.content[0] {
         ToolContent::Text { text } => assert!(text.contains("Limit: 20")),
@@ -220,9 +222,12 @@ async fn test_tool_execution_optional_missing() {
     }
 
     let tool = search_without_limit();
-    let result = tool.execute(json!({
-        "query": "test"
-    })).await.unwrap();
+    let result = tool
+        .execute(json!({
+            "query": "test"
+        }))
+        .await
+        .unwrap();
 
     match &result.content[0] {
         ToolContent::Text { text } => assert!(text.contains("Limit: 10")),
@@ -240,9 +245,12 @@ async fn test_tool_execution_vec() {
     }
 
     let tool = sum_array();
-    let result = tool.execute(json!({
-        "numbers": [1, 2, 3, 4, 5]
-    })).await.unwrap();
+    let result = tool
+        .execute(json!({
+            "numbers": [1, 2, 3, 4, 5]
+        }))
+        .await
+        .unwrap();
 
     match &result.content[0] {
         ToolContent::Text { text } => assert_eq!(text, "15"),

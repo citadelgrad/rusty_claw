@@ -55,8 +55,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("Tool use: {} (ID: {})", name, id);
                             println!("Input: {}", input);
                         }
-                        ContentBlock::ToolResult { tool_use_id, content, is_error } => {
-                            println!("Tool result (ID: {}, error: {}): {:?}", tool_use_id, is_error, content);
+                        ContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                            is_error,
+                        } => {
+                            println!(
+                                "Tool result (ID: {}, error: {}): {:?}",
+                                tool_use_id, is_error, content
+                            );
                         }
                         ContentBlock::Thinking { thinking } => {
                             println!("Thinking: {}", thinking);
@@ -80,8 +87,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("User: {:?}", msg);
             }
             // Control messages (internal protocol - not normally seen in query())
-            Ok(Message::ControlRequest { .. }) | Ok(Message::ControlResponse { .. })
-            | Ok(Message::RateLimitEvent(_)) | Ok(Message::McpMessage(_)) => {
+            Ok(Message::ControlRequest { .. })
+            | Ok(Message::ControlResponse { .. })
+            | Ok(Message::RateLimitEvent(_))
+            | Ok(Message::McpMessage(_)) => {
                 // Internal protocol messages - not normally seen in query()
             }
             // Handle errors

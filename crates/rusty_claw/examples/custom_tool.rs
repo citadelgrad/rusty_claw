@@ -17,8 +17,8 @@
 //! To use these tools, they would need to be registered with a ClaudeClient
 //! using `client.register_mcp_message_handler(registry)`.
 
-use rusty_claw::prelude::*;
 use rusty_claw::claw_tool;
+use rusty_claw::prelude::*;
 
 // Tool 1: Calculator - Simple math operations
 // Demonstrates: i32 parameters, basic arithmetic
@@ -40,11 +40,7 @@ async fn calculator(operation: String, a: i32, b: i32) -> ToolResult {
     name = "format-text",
     description = "Format text with optional prefix and suffix"
 )]
-async fn format_text(
-    text: String,
-    prefix: Option<String>,
-    suffix: Option<String>,
-) -> ToolResult {
+async fn format_text(text: String, prefix: Option<String>, suffix: Option<String>) -> ToolResult {
     let mut result = text;
 
     // Add prefix if provided
@@ -70,11 +66,15 @@ async fn echo(text: String, repeat: Option<i32>) -> ToolResult {
     let times = repeat.unwrap_or(1); // Default to 1 if not provided
 
     if times <= 0 {
-        return Ok(ToolResult::error("Repeat count must be positive".to_string()));
+        return Ok(ToolResult::error(
+            "Repeat count must be positive".to_string(),
+        ));
     }
 
     if times > 100 {
-        return Ok(ToolResult::error("Repeat count too large (max 100)".to_string()));
+        return Ok(ToolResult::error(
+            "Repeat count too large (max 100)".to_string(),
+        ));
     }
 
     let result = (0..times)
