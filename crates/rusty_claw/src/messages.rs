@@ -257,7 +257,9 @@ pub struct UsageInfo {
 /// Information about an available tool
 ///
 /// Provided in system init messages to describe callable tools.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// The CLI may send tools as plain strings (just the name) or as objects
+/// with name/description/input_schema fields.
+#[derive(Debug, Clone, Serialize)]
 pub struct ToolInfo {
     /// Tool name identifier
     pub name: String,
@@ -267,6 +269,46 @@ pub struct ToolInfo {
     /// Optional JSON schema for tool input
     #[serde(default)]
     pub input_schema: Option<serde_json::Value>,
+}
+
+impl<'de> serde::Deserialize<'de> for ToolInfo {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de;
+
+        #[derive(Deserialize)]
+        struct ToolInfoObj {
+            name: String,
+            #[serde(default)]
+            description: Option<String>,
+            #[serde(default)]
+            input_schema: Option<serde_json::Value>,
+        }
+
+        // Try to deserialize as either a string or an object
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(name) => Ok(ToolInfo {
+                name,
+                description: None,
+                input_schema: None,
+            }),
+            serde_json::Value::Object(_) => {
+                let obj: ToolInfoObj = serde_json::from_value(value)
+                    .map_err(de::Error::custom)?;
+                Ok(ToolInfo {
+                    name: obj.name,
+                    description: obj.description,
+                    input_schema: obj.input_schema,
+                })
+            }
+            _ => Err(de::Error::custom(
+                "expected a string or object for ToolInfo",
+            )),
+        }
+    }
 }
 
 /// Information about an MCP server
@@ -593,6 +635,27 @@ mod tests {
         assert_eq!(tool.name, "bash");
         assert_eq!(tool.description, Some("Run shell commands".to_string()));
         assert!(tool.input_schema.is_some());
+    }
+
+    #[test]
+    fn test_tool_info_from_string() {
+        // CLI v2.x sends tools as plain strings like "Task", "Bash"
+        let json = json!("Task");
+        let tool: ToolInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(tool.name, "Task");
+        assert!(tool.description.is_none());
+        assert!(tool.input_schema.is_none());
+    }
+
+    #[test]
+    fn test_tool_info_array_of_strings() {
+        // CLI sends tools: ["Task", "Bash", "Read", ...]
+        let json = json!(["Task", "Bash", "Read"]);
+        let tools: Vec<ToolInfo> = serde_json::from_value(json).unwrap();
+        assert_eq!(tools.len(), 3);
+        assert_eq!(tools[0].name, "Task");
+        assert_eq!(tools[1].name, "Bash");
+        assert_eq!(tools[2].name, "Read");
     }
 
     #[test]

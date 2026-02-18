@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::options::{AgentDefinition, HookEvent, HookMatcher, PermissionMode, SdkMcpServer};
+use crate::options::{AgentDefinition, HookEvent, HookMatcher, SdkMcpServer};
 
 /// Outgoing control requests from SDK to Claude CLI
 ///
@@ -60,7 +60,9 @@ pub enum ControlRequest {
     /// - Hook callbacks for events (tool use, messages, etc.)
     /// - Agent definitions for spawning subagents
     /// - SDK-hosted MCP servers for tool execution
-    /// - Permission mode and can_use_tool callback registration
+    ///
+    /// Note: Permission mode is set via the `--permission-mode` CLI flag,
+    /// not in the initialize request.
     ///
     /// # Example
     /// ```json
@@ -68,9 +70,7 @@ pub enum ControlRequest {
     ///   "subtype": "initialize",
     ///   "hooks": {},
     ///   "agents": {},
-    ///   "sdk_mcp_servers": [],
-    ///   "permissions": "default",
-    ///   "can_use_tool": true
+    ///   "sdk_mcp_servers": []
     /// }
     /// ```
     Initialize {
@@ -85,13 +85,6 @@ pub enum ControlRequest {
         /// SDK-hosted MCP servers
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         sdk_mcp_servers: Vec<SdkMcpServer>,
-
-        /// Permission mode for tool execution
-        #[serde(skip_serializing_if = "Option::is_none")]
-        permissions: Option<PermissionMode>,
-
-        /// Enable can_use_tool callbacks
-        can_use_tool: bool,
     },
 
     /// Interrupt the current agent execution
@@ -322,13 +315,10 @@ mod tests {
             hooks: HashMap::new(),
             agents: HashMap::new(),
             sdk_mcp_servers: vec![],
-            permissions: None,
-            can_use_tool: true,
         };
 
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["subtype"], "initialize");
-        assert_eq!(json["can_use_tool"], true);
         // Empty collections should be omitted
         assert!(json.get("hooks").is_none());
         assert!(json.get("agents").is_none());
@@ -341,17 +331,16 @@ mod tests {
             hooks: HashMap::new(),
             agents: HashMap::new(),
             sdk_mcp_servers: vec![],
-            permissions: Some(PermissionMode::AcceptEdits),
-            can_use_tool: false,
         };
 
         let json = serde_json::to_string(&req).unwrap();
         let parsed: ControlRequest = serde_json::from_str(&json).unwrap();
 
         match parsed {
-            ControlRequest::Initialize { can_use_tool, permissions, .. } => {
-                assert_eq!(can_use_tool, false);
-                assert!(matches!(permissions, Some(PermissionMode::AcceptEdits)));
+            ControlRequest::Initialize { hooks, agents, sdk_mcp_servers } => {
+                assert!(hooks.is_empty());
+                assert!(agents.is_empty());
+                assert!(sdk_mcp_servers.is_empty());
             }
             _ => panic!("Wrong variant"),
         }

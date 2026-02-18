@@ -635,6 +635,7 @@ impl SdkMcpServerImpl {
 
         match method {
             "initialize" => self.handle_initialize(&request),
+            "notifications/initialized" => Ok(json_rpc_success(request["id"].clone(), json!({}))),
             "tools/list" => self.handle_tools_list(&request),
             "tools/call" => self.handle_tools_call(&request).await,
             _ => Ok(json_rpc_error(

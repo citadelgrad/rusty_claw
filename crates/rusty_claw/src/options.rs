@@ -338,27 +338,32 @@ impl ClaudeAgentOptions {
     ///     .build();
     ///
     /// let args = options.to_cli_args("test prompt");
-    /// assert!(args.contains(&"--max-turns=5".to_string()));
+    /// assert!(args.contains(&"--max-turns".to_string()));
+    /// assert!(args.contains(&"5".to_string()));
     /// ```
     pub fn to_cli_args(&self, prompt: &str) -> Vec<String> {
         let mut args = vec![
-            "--output-format=stream-json".to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
             "--verbose".to_string(),
         ];
 
         // Max turns
         if let Some(max_turns) = self.max_turns {
-            args.push(format!("--max-turns={}", max_turns));
+            args.push("--max-turns".to_string());
+            args.push(max_turns.to_string());
         }
 
         // Model
         if let Some(model) = &self.model {
-            args.push(format!("--model={}", model));
+            args.push("--model".to_string());
+            args.push(model.clone());
         }
 
         // Permission mode
         if let Some(mode) = &self.permission_mode {
-            args.push(format!("--permission-mode={}", mode.to_cli_arg()));
+            args.push("--permission-mode".to_string());
+            args.push(mode.to_cli_arg().to_string());
         }
 
         // System prompt
@@ -369,7 +374,8 @@ impl ClaudeAgentOptions {
                     args.push(text.clone());
                 }
                 SystemPrompt::Preset { preset } => {
-                    args.push(format!("--system-prompt-preset={}", preset));
+                    args.push("--system-prompt-preset".to_string());
+                    args.push(preset.clone());
                 }
             }
         }
@@ -382,17 +388,20 @@ impl ClaudeAgentOptions {
 
         // Allowed tools
         if !self.allowed_tools.is_empty() {
-            args.push(format!("--allowed-tools={}", self.allowed_tools.join(",")));
+            args.push("--allowed-tools".to_string());
+            args.push(self.allowed_tools.join(","));
         }
 
         // Disallowed tools
         if !self.disallowed_tools.is_empty() {
-            args.push(format!("--disallowed-tools={}", self.disallowed_tools.join(",")));
+            args.push("--disallowed-tools".to_string());
+            args.push(self.disallowed_tools.join(","));
         }
 
         // Session options
         if let Some(resume) = &self.resume {
-            args.push(format!("--resume={}", resume));
+            args.push("--resume".to_string());
+            args.push(resume.clone());
         }
 
         if self.fork_session {
@@ -400,7 +409,8 @@ impl ClaudeAgentOptions {
         }
 
         if let Some(name) = &self.session_name {
-            args.push(format!("--session-name={}", name));
+            args.push("--session-name".to_string());
+            args.push(name.clone());
         }
 
         if self.enable_file_checkpointing {
@@ -409,12 +419,20 @@ impl ClaudeAgentOptions {
 
         // Settings isolation for reproducibility
         match &self.settings_sources {
-            Some(sources) => args.push(format!("--settings-sources={}", sources.join(","))),
-            None => args.push("--settings-sources=".to_string()),
+            Some(sources) => {
+                args.push("--setting-sources".to_string());
+                args.push(sources.join(","));
+            }
+            None => {
+                args.push("--setting-sources".to_string());
+                args.push(String::new());
+            }
         }
 
-        // Enable control protocol input
-        args.push("--input-format=stream-json".to_string());
+        // Note: --input-format=stream-json is NOT included here because this method
+        // is used by the one-shot query() API which closes stdin immediately.
+        // The interactive ClaudeClient adds --input-format=stream-json separately
+        // in its connect() method, where it sends a proper initialization message.
 
         // Prompt
         args.push("-p".to_string());
@@ -672,10 +690,10 @@ mod tests {
         let opts = ClaudeAgentOptions::default();
         let args = opts.to_cli_args("test prompt");
 
-        assert!(args.contains(&"--output-format=stream-json".to_string()));
+        assert!(args.contains(&"--output-format".to_string()));
+        assert!(args.contains(&"stream-json".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
-        assert!(args.contains(&"--input-format=stream-json".to_string()));
-        assert!(args.contains(&"--settings-sources=".to_string()));
+        assert!(args.contains(&"--setting-sources".to_string()));
         assert!(args.contains(&"-p".to_string()));
         assert!(args.contains(&"test prompt".to_string()));
     }
@@ -690,9 +708,13 @@ mod tests {
 
         let args = opts.to_cli_args("test");
 
-        assert!(args.contains(&"--max-turns=10".to_string()));
-        assert!(args.contains(&"--model=claude-opus-4".to_string()));
-        assert!(args.contains(&"--permission-mode=plan".to_string()));
+        // All args use space-separated format (--flag value), not --flag=value
+        assert!(args.contains(&"--max-turns".to_string()));
+        assert!(args.contains(&"10".to_string()));
+        assert!(args.contains(&"--model".to_string()));
+        assert!(args.contains(&"claude-opus-4".to_string()));
+        assert!(args.contains(&"--permission-mode".to_string()));
+        assert!(args.contains(&"plan".to_string()));
     }
 
     #[test]
@@ -715,7 +737,8 @@ mod tests {
 
         let args = opts.to_cli_args("test");
 
-        assert!(args.contains(&"--system-prompt-preset=assistant".to_string()));
+        assert!(args.contains(&"--system-prompt-preset".to_string()));
+        assert!(args.contains(&"assistant".to_string()));
     }
 
     #[test]
@@ -726,7 +749,8 @@ mod tests {
 
         let args = opts.to_cli_args("test");
 
-        assert!(args.contains(&"--allowed-tools=Read,Bash".to_string()));
+        assert!(args.contains(&"--allowed-tools".to_string()));
+        assert!(args.contains(&"Read,Bash".to_string()));
     }
 
     #[test]
@@ -737,7 +761,8 @@ mod tests {
 
         let args = opts.to_cli_args("test");
 
-        assert!(args.contains(&"--disallowed-tools=Edit,Write".to_string()));
+        assert!(args.contains(&"--disallowed-tools".to_string()));
+        assert!(args.contains(&"Edit,Write".to_string()));
     }
 
     #[test]
@@ -751,18 +776,23 @@ mod tests {
 
         let args = opts.to_cli_args("test");
 
-        assert!(args.contains(&"--resume=session-123".to_string()));
+        assert!(args.contains(&"--resume".to_string()));
+        assert!(args.contains(&"session-123".to_string()));
         assert!(args.contains(&"--fork-session".to_string()));
-        assert!(args.contains(&"--session-name=my-session".to_string()));
+        assert!(args.contains(&"--session-name".to_string()));
+        assert!(args.contains(&"my-session".to_string()));
         assert!(args.contains(&"--enable-file-checkpointing".to_string()));
     }
 
     #[test]
     fn test_to_cli_args_settings_sources_default() {
-        // When no settings_sources configured, should emit empty --settings-sources=
+        // When no settings_sources configured, should emit empty --setting-sources
         let opts = ClaudeAgentOptions::default();
         let args = opts.to_cli_args("test");
-        assert!(args.contains(&"--settings-sources=".to_string()));
+        assert!(args.contains(&"--setting-sources".to_string()));
+        // The value after --setting-sources should be an empty string
+        let idx = args.iter().position(|a| a == "--setting-sources").unwrap();
+        assert_eq!(args[idx + 1], "");
     }
 
     #[test]
@@ -772,8 +802,8 @@ mod tests {
             .settings_sources(vec!["local".to_string(), "project".to_string()])
             .build();
         let args = opts.to_cli_args("test");
-        assert!(args.contains(&"--settings-sources=local,project".to_string()));
-        assert!(!args.contains(&"--settings-sources=".to_string()));
+        assert!(args.contains(&"--setting-sources".to_string()));
+        assert!(args.contains(&"local,project".to_string()));
     }
 
     #[test]

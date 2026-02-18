@@ -223,12 +223,14 @@ impl ControlProtocol {
     /// # }
     /// ```
     pub async fn initialize(&self, options: &ClaudeAgentOptions) -> Result<(), ClawError> {
+        // Match the official SDK's initialize format:
+        // - hooks and agents are sent in the control request
+        // - permissions and can_use_tool are set via CLI flags, not here
+        // - sdk_mcp_servers are advertised here so the CLI knows about them
         let request = ControlRequest::Initialize {
             hooks: options.hooks.clone(),
             agents: options.agents.clone(),
             sdk_mcp_servers: options.sdk_mcp_servers.clone(),
-            permissions: options.permission_mode.clone(),
-            can_use_tool: true, // Enable can_use_tool callbacks
         };
 
         match self.request(request).await? {
@@ -296,8 +298,8 @@ impl ControlProtocol {
             .await
             .map_err(|e| ClawError::Connection(format!("Failed to send control request: {}", e)))?;
 
-        // Wait for response with timeout
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
+        // Wait for response with timeout (60s to accommodate MCP server startup)
+        match tokio::time::timeout(Duration::from_secs(60), rx).await {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(_)) => Err(ClawError::ControlError(
                 "Response channel closed".to_string(),
@@ -457,7 +459,10 @@ impl ControlProtocol {
                 };
                 if let Some(handler) = handler {
                     match handler.handle(&server_name, message).await {
-                        Ok(result) => ControlResponse::Success { data: result },
+                        Ok(result) => ControlResponse::Success {
+                            // Wrap in mcp_response (matches Python SDK format)
+                            data: json!({"mcp_response": result}),
+                        },
                         Err(e) => ControlResponse::Error {
                             error: e.to_string(),
                             extra: json!({}),
@@ -472,11 +477,15 @@ impl ControlProtocol {
             }
         };
 
-        // Send response back to CLI
+        // Send response back to CLI.
+        // request_id goes INSIDE the response object (matches Python SDK format).
+        let mut response_value = serde_json::to_value(&response).unwrap();
+        if let Some(obj) = response_value.as_object_mut() {
+            obj.insert("request_id".to_string(), json!(request_id));
+        }
         let msg = json!({
             "type": "control_response",
-            "request_id": request_id,
-            "response": response,
+            "response": response_value,
         });
 
         match serde_json::to_vec(&msg) {
@@ -526,10 +535,12 @@ mod tests {
         }
 
         fn simulate_response(&self, request_id: &str, response: ControlResponse) {
+            // Put request_id inside the response object (matches real CLI format)
+            let mut resp_value = serde_json::to_value(&response).unwrap();
+            resp_value["request_id"] = serde_json::Value::String(request_id.to_string());
             let msg = json!({
                 "type": "control_response",
-                "request_id": request_id,
-                "response": response,
+                "response": resp_value,
             });
             self.sender.send(Ok(msg)).unwrap();
         }
@@ -720,12 +731,14 @@ mod tests {
         };
         control.handle_incoming("req_1", request).await;
 
-        // Check sent response
+        // Check sent response - request_id is inside the response object
         let sent = transport.get_sent().await;
         assert_eq!(sent.len(), 1);
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
         assert_eq!(msg["type"], "control_response");
+        assert!(msg.get("request_id").is_none(), "request_id should NOT be at top level");
         assert_eq!(msg["response"]["subtype"], "success");
+        assert_eq!(msg["response"]["request_id"], "req_1");
         assert_eq!(msg["response"]["allowed"], true);
     }
 
@@ -792,6 +805,8 @@ mod tests {
         let sent = transport.get_sent().await;
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
         assert_eq!(msg["response"]["subtype"], "success");
-        assert_eq!(msg["response"]["server"], "test_server");
+        // MCP result is wrapped in mcp_response (matches Python SDK format)
+        assert_eq!(msg["response"]["mcp_response"]["server"], "test_server");
+        assert_eq!(msg["response"]["request_id"], "req_1");
     }
 }

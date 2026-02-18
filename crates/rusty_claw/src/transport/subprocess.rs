@@ -95,7 +95,7 @@ impl SubprocessCLITransport {
     ///
     /// * `cli_path` - Optional path to the `claude` CLI executable.
     ///   If `None`, the CLI will be auto-discovered during [`connect()`](Transport::connect).
-    /// * `args` - Command-line arguments (should include `--output-format=stream-json`)
+    /// * `args` - Command-line arguments (should include `--output-format stream-json`)
     ///
     /// # Example
     ///
@@ -106,13 +106,13 @@ impl SubprocessCLITransport {
     /// // Auto-discover CLI from PATH
     /// let transport = SubprocessCLITransport::new(
     ///     None,
-    ///     vec!["--output-format=stream-json".to_string()]
+    ///     vec!["--output-format".to_string(), "stream-json".to_string()]
     /// );
     ///
     /// // Or use explicit path
     /// let transport = SubprocessCLITransport::new(
     ///     Some(PathBuf::from("/opt/homebrew/bin/claude")),
-    ///     vec!["--output-format=stream-json".to_string()]
+    ///     vec!["--output-format".to_string(), "stream-json".to_string()]
     /// );
     /// ```
     pub fn new(cli_path: Option<PathBuf>, args: Vec<String>) -> Self {
@@ -332,6 +332,19 @@ impl Transport for SubprocessCLITransport {
             cmd.current_dir(cwd);
         }
 
+        // Signal to the CLI that it's running in SDK mode.
+        // This enables the control protocol on stdin/stdout.
+        cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-rust");
+
+        // Tell the CLI the SDK version. The Python SDK sets both
+        // CLAUDE_CODE_ENTRYPOINT and CLAUDE_AGENT_SDK_VERSION, and the
+        // CLI may require both to enter SDK mode properly.
+        cmd.env("CLAUDE_AGENT_SDK_VERSION", env!("CARGO_PKG_VERSION"));
+
+        // Remove CLAUDECODE env var to prevent "nested session" detection
+        // when running inside an existing Claude Code session.
+        cmd.env_remove("CLAUDECODE");
+
         // Apply environment variables if configured
         if !self.env.is_empty() {
             cmd.envs(&self.env);
@@ -452,12 +465,12 @@ mod tests {
     fn test_new_transport() {
         let transport = SubprocessCLITransport::new(
             Some(PathBuf::from("claude")),
-            vec!["--output-format=stream-json".to_string()],
+            vec!["--output-format".to_string(), "stream-json".to_string()],
         );
 
         assert!(!transport.is_ready());
         assert_eq!(transport.cli_path_arg, Some(PathBuf::from("claude")));
-        assert_eq!(transport.args.len(), 1);
+        assert_eq!(transport.args.len(), 2);
     }
 
     #[test]

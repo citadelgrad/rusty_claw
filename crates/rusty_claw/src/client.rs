@@ -174,6 +174,9 @@ pub struct ClaudeClient {
 
     /// Session initialization state
     is_initialized: Arc<AtomicBool>,
+
+    /// MCP handler registered before connect (applied during connect, before initialize)
+    pending_mcp_handler: Option<Arc<dyn McpMessageHandler>>,
 }
 
 impl ClaudeClient {
@@ -204,6 +207,7 @@ impl ClaudeClient {
             options,
             message_rx: Arc::new(Mutex::new(None)),
             is_initialized: Arc::new(AtomicBool::new(false)),
+            pending_mcp_handler: None,
         })
     }
 
@@ -269,19 +273,23 @@ impl ClaudeClient {
         // Create CLI args for interactive mode (no prompt yet)
         // We'll send messages via stdin after connection
         let mut cli_args = vec![
-            "--output-format=stream-json".to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
             "--verbose".to_string(),
         ];
 
         // Add options (but not the prompt - that comes via send_message)
         if let Some(max_turns) = self.options.max_turns {
-            cli_args.push(format!("--max-turns={}", max_turns));
+            cli_args.push("--max-turns".to_string());
+            cli_args.push(max_turns.to_string());
         }
         if let Some(model) = &self.options.model {
-            cli_args.push(format!("--model={}", model));
+            cli_args.push("--model".to_string());
+            cli_args.push(model.clone());
         }
         if let Some(mode) = &self.options.permission_mode {
-            cli_args.push(format!("--permission-mode={}", mode.to_cli_arg()));
+            cli_args.push("--permission-mode".to_string());
+            cli_args.push(mode.to_cli_arg().to_string());
         }
 
         // System prompt
@@ -292,7 +300,8 @@ impl ClaudeClient {
                     cli_args.push(text.clone());
                 }
                 crate::options::SystemPrompt::Preset { preset } => {
-                    cli_args.push(format!("--system-prompt-preset={}", preset));
+                    cli_args.push("--system-prompt-preset".to_string());
+                    cli_args.push(preset.clone());
                 }
             }
         }
@@ -305,23 +314,27 @@ impl ClaudeClient {
 
         // Allowed tools
         if !self.options.allowed_tools.is_empty() {
-            cli_args.push(format!("--allowed-tools={}", self.options.allowed_tools.join(",")));
+            cli_args.push("--allowed-tools".to_string());
+            cli_args.push(self.options.allowed_tools.join(","));
         }
 
         // Disallowed tools
         if !self.options.disallowed_tools.is_empty() {
-            cli_args.push(format!("--disallowed-tools={}", self.options.disallowed_tools.join(",")));
+            cli_args.push("--disallowed-tools".to_string());
+            cli_args.push(self.options.disallowed_tools.join(","));
         }
 
         // Session options
         if let Some(resume) = &self.options.resume {
-            cli_args.push(format!("--resume={}", resume));
+            cli_args.push("--resume".to_string());
+            cli_args.push(resume.clone());
         }
         if self.options.fork_session {
             cli_args.push("--fork-session".to_string());
         }
         if let Some(name) = &self.options.session_name {
-            cli_args.push(format!("--session-name={}", name));
+            cli_args.push("--session-name".to_string());
+            cli_args.push(name.clone());
         }
         if self.options.enable_file_checkpointing {
             cli_args.push("--enable-file-checkpointing".to_string());
@@ -329,12 +342,33 @@ impl ClaudeClient {
 
         // Settings isolation for reproducibility
         match &self.options.settings_sources {
-            Some(sources) => cli_args.push(format!("--settings-sources={}", sources.join(","))),
-            None => cli_args.push("--settings-sources=".to_string()),
+            Some(sources) => {
+                cli_args.push("--setting-sources".to_string());
+                cli_args.push(sources.join(","));
+            }
+            None => {
+                cli_args.push("--setting-sources".to_string());
+                cli_args.push(String::new());
+            }
+        }
+
+        // MCP config: tell CLI about SDK-hosted MCP servers.
+        // Must be two separate args (not --mcp-config=...) matching Python SDK format.
+        if !self.options.sdk_mcp_servers.is_empty() {
+            let mut mcp_servers = serde_json::Map::new();
+            for server in &self.options.sdk_mcp_servers {
+                mcp_servers.insert(
+                    server.name.clone(),
+                    serde_json::json!({"type": "sdk"}),
+                );
+            }
+            cli_args.push("--mcp-config".to_string());
+            cli_args.push(serde_json::json!({"mcpServers": mcp_servers}).to_string());
         }
 
         // Enable control protocol input
-        cli_args.push("--input-format=stream-json".to_string());
+        cli_args.push("--input-format".to_string());
+        cli_args.push("stream-json".to_string());
 
         // Create and connect transport
         let mut transport = SubprocessCLITransport::new(self.options.cli_path.clone(), cli_args);
@@ -367,6 +401,14 @@ impl ClaudeClient {
         // Without this, initialize() would always timeout.
         let (user_tx, user_rx) = mpsc::unbounded_channel();
         Self::spawn_message_router(message_rx, control.clone(), user_tx);
+
+        // Apply pending MCP handler BEFORE initialize.
+        // The CLI sends mcp_message requests during init, so the handler
+        // must be registered before the initialize handshake.
+        if let Some(handler) = self.pending_mcp_handler.take() {
+            let mut handlers = control.handlers().await;
+            handlers.register_mcp_message(handler);
+        }
 
         // Initialize session (now works because router handles the response)
         control.initialize(&self.options).await?;
@@ -506,10 +548,12 @@ impl ClaudeClient {
     /// ```json
     /// {
     ///   "type": "user",
+    ///   "session_id": "",
     ///   "message": {
     ///     "role": "user",
-    ///     "content": [{"type": "text", "text": "..."}]
-    ///   }
+    ///     "content": "..."
+    ///   },
+    ///   "parent_tool_use_id": null
     /// }
     /// ```
     async fn write_message(&self, content: &str) -> Result<(), ClawError> {
@@ -519,18 +563,15 @@ impl ClaudeClient {
             ClawError::Connection("Transport not available".to_string())
         })?;
 
-        // Format user message
+        // Format user message (matches Python SDK format)
         let message = json!({
             "type": "user",
+            "session_id": "",
             "message": {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": content
-                    }
-                ]
-            }
+                "content": content
+            },
+            "parent_tool_use_id": null
         });
 
         // Serialize to bytes
@@ -570,11 +611,19 @@ impl ClaudeClient {
 
                         match msg_type {
                             Some("control_response") => {
+                                // Extract request_id from INSIDE the response object
+                                // (matches Python SDK: response.get("request_id"))
                                 let request_id = value
-                                    .get("request_id")
+                                    .get("response")
+                                    .and_then(|r| r.get("request_id"))
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
+
+                                debug!(
+                                    request_id = %request_id,
+                                    "Received control_response"
+                                );
 
                                 if let Some(response_val) = value.get("response") {
                                     match serde_json::from_value::<ControlResponse>(
@@ -1003,10 +1052,14 @@ impl ClaudeClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn register_mcp_message_handler(&self, handler: Arc<dyn McpMessageHandler>) {
+    pub async fn register_mcp_message_handler(&mut self, handler: Arc<dyn McpMessageHandler>) {
         if let Some(control) = &self.control {
+            // Already connected: register directly on control protocol
             let mut handlers = control.handlers().await;
             handlers.register_mcp_message(handler);
+        } else {
+            // Not yet connected: store for apply during connect(), before initialize()
+            self.pending_mcp_handler = Some(handler);
         }
     }
 }
@@ -1285,7 +1338,7 @@ mod tests {
         }
 
         let options = ClaudeAgentOptions::default();
-        let client = ClaudeClient::new(options).unwrap();
+        let mut client = ClaudeClient::new(options).unwrap();
 
         // These should not panic even when not connected
         client.register_can_use_tool_handler(Arc::new(TestPermHandler)).await;

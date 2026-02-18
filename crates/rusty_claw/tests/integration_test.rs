@@ -407,8 +407,6 @@ async fn test_initialize_with_agents() {
         hooks: HashMap::new(),
         agents: agents.clone(),
         sdk_mcp_servers: vec![],
-        permissions: None,
-        can_use_tool: true,
     };
 
     let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");
@@ -430,8 +428,6 @@ async fn test_initialize_empty_agents_omitted() {
         hooks: HashMap::new(),
         agents: HashMap::new(), // Empty map
         sdk_mcp_servers: vec![],
-        permissions: None,
-        can_use_tool: true,
     };
 
     let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");
@@ -472,8 +468,6 @@ async fn test_initialize_multiple_agents() {
         hooks: HashMap::new(),
         agents: agents.clone(),
         sdk_mcp_servers: vec![],
-        permissions: None,
-        can_use_tool: true,
     };
 
     let json = serde_json::to_value(&init_request).expect("Failed to serialize Initialize");

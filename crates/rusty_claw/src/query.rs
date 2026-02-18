@@ -137,8 +137,7 @@ pub async fn query(
         vec![
             "--output-format=stream-json".to_string(),
             "--verbose".to_string(),
-            "--settings-sources=".to_string(),
-            "--input-format=stream-json".to_string(),
+            "--setting-sources=".to_string(),
             "-p".to_string(),
             prompt,
         ]
