@@ -352,19 +352,10 @@ impl ClaudeClient {
             }
         }
 
-        // MCP config: tell CLI about SDK-hosted MCP servers.
-        // Must be two separate args (not --mcp-config=...) matching Python SDK format.
-        if !self.options.sdk_mcp_servers.is_empty() {
-            let mut mcp_servers = serde_json::Map::new();
-            for server in &self.options.sdk_mcp_servers {
-                mcp_servers.insert(
-                    server.name.clone(),
-                    serde_json::json!({"type": "sdk"}),
-                );
-            }
-            cli_args.push("--mcp-config".to_string());
-            cli_args.push(serde_json::json!({"mcpServers": mcp_servers}).to_string());
-        }
+        // Note: SDK-hosted MCP servers are NOT passed via --mcp-config.
+        // The CLI hangs when type: "sdk" servers appear in --mcp-config args.
+        // Instead, SDK servers are registered via the sdkMcpServers field in
+        // the initialize control request (sent by control.initialize()).
 
         // Enable control protocol input
         cli_args.push("--input-format".to_string());

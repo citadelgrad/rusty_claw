@@ -653,7 +653,7 @@ impl SdkMcpServerImpl {
         Ok(json_rpc_success(
             request["id"].clone(),
             json!({
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": "2025-11-25",
                 "capabilities": {
                     "tools": {}
                 },

@@ -80,8 +80,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("User: {:?}", msg);
             }
             // Control messages (internal protocol - not normally seen in query())
-            Ok(Message::ControlRequest { .. }) | Ok(Message::ControlResponse { .. }) => {
-                // These shouldn't appear in normal query() usage
+            Ok(Message::ControlRequest { .. }) | Ok(Message::ControlResponse { .. })
+            | Ok(Message::RateLimitEvent(_)) | Ok(Message::McpMessage(_)) => {
+                // Internal protocol messages - not normally seen in query()
             }
             // Handle errors
             Err(e) => {

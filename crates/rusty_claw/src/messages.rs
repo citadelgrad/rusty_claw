@@ -98,6 +98,11 @@ pub enum Message {
         #[serde(flatten)]
         response: ControlResponse,
     },
+    /// Rate limit information from the CLI
+    RateLimitEvent(serde_json::Value),
+    /// MCP message from the CLI (routed to SDK MCP server handler)
+    #[serde(rename = "mcp_message")]
+    McpMessage(serde_json::Value),
 }
 
 /// System message variants discriminated by `subtype` field
@@ -1011,7 +1016,8 @@ mod tests {
                 match msg {
                     Message::System(_) | Message::Assistant(_) | Message::User(_)
                     | Message::Result(_) | Message::ControlRequest { .. }
-                    | Message::ControlResponse { .. } => {}
+                    | Message::ControlResponse { .. }
+                    | Message::RateLimitEvent(_) | Message::McpMessage(_) => {}
                 }
                 // If we got here, the message is valid
                 let _ = i; // Use i to avoid unused warning

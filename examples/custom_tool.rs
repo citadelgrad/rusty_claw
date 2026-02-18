@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = ClaudeAgentOptions::builder()
         .max_turns(5)
         .model("claude-haiku-4-5")
-        .permission_mode(PermissionMode::AcceptEdits)
+        .permission_mode(PermissionMode::BypassPermissions)
         .sdk_mcp_servers(vec![rusty_claw::options::SdkMcpServer {
             name: "text_tools".to_string(),
             version: "1.0.0".to_string(),

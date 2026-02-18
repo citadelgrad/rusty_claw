@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::options::{AgentDefinition, HookEvent, HookMatcher, SdkMcpServer};
+use crate::options::{AgentDefinition, HookEvent, HookMatcher};
 
 /// Outgoing control requests from SDK to Claude CLI
 ///
@@ -82,9 +82,15 @@ pub enum ControlRequest {
         #[serde(skip_serializing_if = "HashMap::is_empty", default)]
         agents: HashMap<String, AgentDefinition>,
 
-        /// SDK-hosted MCP servers
-        #[serde(skip_serializing_if = "Vec::is_empty", default)]
-        sdk_mcp_servers: Vec<SdkMcpServer>,
+        /// SDK-hosted MCP server names (strings, not objects)
+        ///
+        /// The CLI expects `sdkMcpServers: ["name1", "name2"]` — just names.
+        #[serde(
+            rename = "sdkMcpServers",
+            skip_serializing_if = "Vec::is_empty",
+            default
+        )]
+        sdk_mcp_servers: Vec<String>,
     },
 
     /// Interrupt the current agent execution
@@ -322,7 +328,7 @@ mod tests {
         // Empty collections should be omitted
         assert!(json.get("hooks").is_none());
         assert!(json.get("agents").is_none());
-        assert!(json.get("sdk_mcp_servers").is_none());
+        assert!(json.get("sdkMcpServers").is_none());
     }
 
     #[test]

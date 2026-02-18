@@ -230,7 +230,7 @@ impl ControlProtocol {
         let request = ControlRequest::Initialize {
             hooks: options.hooks.clone(),
             agents: options.agents.clone(),
-            sdk_mcp_servers: options.sdk_mcp_servers.clone(),
+            sdk_mcp_servers: options.sdk_mcp_servers.iter().map(|s| s.name.clone()).collect(),
         };
 
         match self.request(request).await? {
@@ -477,16 +477,43 @@ impl ControlProtocol {
             }
         };
 
-        // Send response back to CLI.
-        // request_id goes INSIDE the response object (matches Python SDK format).
-        let mut response_value = serde_json::to_value(&response).unwrap();
-        if let Some(obj) = response_value.as_object_mut() {
-            obj.insert("request_id".to_string(), json!(request_id));
-        }
-        let msg = json!({
-            "type": "control_response",
-            "response": response_value,
-        });
+        // Send response back to CLI (matches Python SDK format).
+        // Python SDK format:
+        //   {"type": "control_response", "response": {
+        //     "subtype": "success", "request_id": "...", "response": {<data>}
+        //   }}
+        let msg = match response {
+            ControlResponse::Success { data } => {
+                json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "success",
+                        "request_id": request_id,
+                        "response": data,
+                    }
+                })
+            }
+            ControlResponse::Error { error, extra } => {
+                let mut resp = json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "error",
+                        "request_id": request_id,
+                        "error": error,
+                    }
+                });
+                // Merge extra fields
+                if let (Some(resp_obj), Some(extra_obj)) = (
+                    resp["response"].as_object_mut(),
+                    extra.as_object(),
+                ) {
+                    for (k, v) in extra_obj {
+                        resp_obj.insert(k.clone(), v.clone());
+                    }
+                }
+                resp
+            }
+        };
 
         match serde_json::to_vec(&msg) {
             Ok(mut bytes) => {
@@ -739,7 +766,8 @@ mod tests {
         assert!(msg.get("request_id").is_none(), "request_id should NOT be at top level");
         assert_eq!(msg["response"]["subtype"], "success");
         assert_eq!(msg["response"]["request_id"], "req_1");
-        assert_eq!(msg["response"]["allowed"], true);
+        // Data is nested inside response.response (matches Python SDK format)
+        assert_eq!(msg["response"]["response"]["allowed"], true);
     }
 
     #[tokio::test]
@@ -756,7 +784,7 @@ mod tests {
 
         let sent = transport.get_sent().await;
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
-        assert_eq!(msg["response"]["allowed"], true);
+        assert_eq!(msg["response"]["response"]["allowed"], true);
     }
 
     #[tokio::test]
@@ -781,7 +809,8 @@ mod tests {
         let sent = transport.get_sent().await;
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
         assert_eq!(msg["response"]["subtype"], "success");
-        assert_eq!(msg["response"]["echo"]["test"], "data");
+        // Data is nested inside response.response (Python SDK format)
+        assert_eq!(msg["response"]["response"]["echo"]["test"], "data");
     }
 
     #[tokio::test]
@@ -805,8 +834,8 @@ mod tests {
         let sent = transport.get_sent().await;
         let msg: Value = serde_json::from_slice(&sent[0]).unwrap();
         assert_eq!(msg["response"]["subtype"], "success");
-        // MCP result is wrapped in mcp_response (matches Python SDK format)
-        assert_eq!(msg["response"]["mcp_response"]["server"], "test_server");
         assert_eq!(msg["response"]["request_id"], "req_1");
+        // MCP result is wrapped in response.response.mcp_response (Python SDK format)
+        assert_eq!(msg["response"]["response"]["mcp_response"]["server"], "test_server");
     }
 }
