@@ -1,0 +1,37 @@
+docs/HOOKS.md
+  d8a209e63d8f92c0 1042
+docs/SESSIONS.md
+  d8a209e63d8f92c0 216
+crates/rusty_claw/src/lib.rs
+  d8a209e63d8f92c0 73-102
+docs/MCP.md
+  d8a209e63d8f92c0 354,372,501
+CONTRIBUTING.md
+  d8a209e63d8f92c0 27,30-34,36-40,82-89,92
+docs/SPEC.md
+  d8a209e63d8f92c0 87,94-95,97-98,103-107,116,206-218,365,453-454,460-463,782
+docs/QUICKSTART.md
+  d8a209e63d8f92c0 327
+docs/MESSAGES.md
+  d8a209e63d8f92c0 68-70,82-83,668-675
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "8e1172beeae5f01915cda003dfbecece0a81009b",
+  "prompts": {
+    "d8a209e63d8f92c0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7a77e45c-5ed6-4829-b802-3bcf5da57a79",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 107,
+      "total_deletions": 35,
+      "accepted_lines": 101,
+      "overriden_lines": 0
+    }
+  }
+}
