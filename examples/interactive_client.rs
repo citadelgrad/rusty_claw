@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configure the session
     let options = ClaudeAgentOptions::builder()
         .max_turns(5)
+        .model("claude-haiku-4-5")
         .permission_mode(PermissionMode::AcceptEdits)
         .build();
 

@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 3: Configure the agent to advertise our SDK MCP server
     let options = ClaudeAgentOptions::builder()
         .max_turns(5)
+        .model("claude-haiku-4-5")
         .permission_mode(PermissionMode::AcceptEdits)
         .sdk_mcp_servers(vec![rusty_claw::options::SdkMcpServer {
             name: "text_tools".to_string(),
@@ -90,11 +91,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }])
         .build();
 
-    // Step 4: Connect and plug in the MCP handler
+    // Step 4: Register MCP handler BEFORE connect (CLI sends mcp_message during init)
     println!("\nConnecting to Claude CLI...");
     let mut client = ClaudeClient::new(options)?;
-    client.connect().await?;
     client.register_mcp_message_handler(Arc::new(registry)).await;
+    client.connect().await?;
     println!("Connected.\n");
 
     // Step 5: Ask Claude to use the tools
