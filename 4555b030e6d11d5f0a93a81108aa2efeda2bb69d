@@ -1,0 +1,55 @@
+examples/subagent_usage.rs
+  4ee86046bdaa04dd 11
+examples/rate_limit_handling.rs
+  4ee86046bdaa04dd 1-158
+examples/file_checkpointing.rs
+  4ee86046bdaa04dd 1-141
+examples/external_mcp.rs
+  4ee86046bdaa04dd 1-92
+examples/hooks_guardrails.rs
+  4ee86046bdaa04dd 14
+examples/image_tool_results.rs
+  4ee86046bdaa04dd 1-81
+examples/interrupt_and_status.rs
+  4ee86046bdaa04dd 1-90,93-133
+examples/Cargo.toml
+  4ee86046bdaa04dd 26-89
+examples/system_prompts.rs
+  4ee86046bdaa04dd 1-103,105-157
+examples/hook_callbacks.rs
+  4ee86046bdaa04dd 1-225,227-233
+examples/agent_environment.rs
+  4ee86046bdaa04dd 1-147
+examples/advanced_tools.rs
+  4ee86046bdaa04dd 1-104,106-178
+examples/advanced_config.rs
+  4ee86046bdaa04dd 1-121
+examples/tool_permissions.rs
+  4ee86046bdaa04dd 1-150
+examples/partial_messages.rs
+  4ee86046bdaa04dd 1-101
+examples/session_resume.rs
+  4ee86046bdaa04dd 1-169
+examples/transport_layer.rs
+  4ee86046bdaa04dd 1-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.3",
+  "base_commit_sha": "4555b030e6d11d5f0a93a81108aa2efeda2bb69d",
+  "prompts": {
+    "4ee86046bdaa04dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2093ef6e-2046-4a08-9e54-b26b292744f1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 2131,
+      "total_deletions": 39,
+      "accepted_lines": 2110,
+      "overriden_lines": 4
+    }
+  }
+}
