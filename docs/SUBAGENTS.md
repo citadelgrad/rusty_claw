@@ -274,6 +274,6 @@ See [HOOKS.md](./HOOKS.md) for full hook configuration details, handler examples
 - [HOOKS.md](./HOOKS.md) -- Hook events and lifecycle callbacks
 - [SPEC.md](./SPEC.md) -- Full SDK specification
 - [QUICKSTART.md](./QUICKSTART.md) -- Getting started guide
-- [Examples: subagent_usage.rs](../crates/rusty_claw/examples/subagent_usage.rs) -- Working example
+- [Examples: subagent_usage.rs](../examples/subagent_usage.rs) -- Working example
 - [Source: options.rs](../crates/rusty_claw/src/options.rs) -- `AgentDefinition` and `ClaudeAgentOptions`
 - [Source: messages.rs](../crates/rusty_claw/src/messages.rs) -- `AssistantMessage` with `parent_tool_use_id`

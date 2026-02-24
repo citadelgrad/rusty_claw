@@ -1040,7 +1040,8 @@ impl HookCallback for MyHook {
 
 - [Permissions](./PERMISSIONS.md) -- control what your agent can do
 - [Technical Spec](./SPEC.md) -- system design and protocol docs
-- [Example: hooks_guardrails.rs](../crates/rusty_claw/examples/hooks_guardrails.rs) -- complete working example
+- [Example: hooks_guardrails.rs](../examples/hooks_guardrails.rs) -- HookHandler validation and logging
+- [Example: hook_callbacks.rs](../examples/hook_callbacks.rs) -- HookCallback trait, HookInput/HookContext/HookResponse
 - [Source: hooks module](../crates/rusty_claw/src/hooks/mod.rs) -- hook types and traits
 - [Source: options module](../crates/rusty_claw/src/options.rs) -- HookEvent and HookMatcher definitions
 - [Source: control handlers](../crates/rusty_claw/src/control/handlers.rs) -- HookHandler trait and registration

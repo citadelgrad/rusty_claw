@@ -14,9 +14,9 @@ The `ClaudeAgentOptions` struct exposes four session-related fields:
 
 | Field | Type | CLI Flag | Purpose |
 |-------|------|----------|---------|
-| `resume` | `Option<String>` | `--resume=ID` | Session ID to resume |
+| `resume` | `Option<String>` | `--resume ID` | Session ID to resume |
 | `fork_session` | `bool` | `--fork-session` | Fork instead of resuming in-place |
-| `session_name` | `Option<String>` | `--session-name=NAME` | Human-readable session name |
+| `session_name` | `Option<String>` | `--session-name NAME` | Human-readable session name |
 | `enable_file_checkpointing` | `bool` | `--enable-file-checkpointing` | Enable file-based checkpoints |
 
 All four are set through the builder pattern on `ClaudeAgentOptions::builder()`.
@@ -73,7 +73,7 @@ let options = ClaudeAgentOptions::builder()
     .build();
 ```
 
-This generates the CLI argument `--resume=sess_abc123`. The CLI restores the full conversation history and tool state from that session.
+This generates the CLI argument `--resume sess_abc123`. The CLI restores the full conversation history and tool state from that session.
 
 ### Resuming with a Named Session
 

@@ -85,12 +85,7 @@ rusty_claw/                         # Workspace root
 │   │   │   ├── options.rs          # ClaudeAgentOptions builder
 │   │   │   ├── error.rs            # ClawError hierarchy (thiserror)
 │   │   │   └── query.rs            # One-shot query API
-│   │   ├── examples/
-│   │   │   ├── simple_query.rs
-│   │   │   ├── interactive_client.rs
-│   │   │   ├── custom_tool.rs
-│   │   │   ├── hooks_guardrails.rs
-│   │   │   └── subagent_usage.rs
+│   │   ├── examples/                   # (examples live in workspace examples/ crate)
 │   │   ├── tests/
 │   │   │   ├── integration_test.rs
 │   │   │   └── fixtures/           # NDJSON message fixtures for replay
@@ -102,9 +97,25 @@ rusty_claw/                         # Workspace root
 │           └── lib.rs              # #[claw_tool] attribute macro
 ├── examples/                       # Standalone example crate
 │   ├── Cargo.toml
-│   ├── simple_query.rs
-│   ├── interactive_client.rs
-│   └── custom_tool.rs
+│   ├── simple_query.rs             # One-shot query with streaming
+│   ├── interactive_client.rs       # Multi-turn ClaudeClient session
+│   ├── custom_tool.rs              # Custom MCP tools with #[claw_tool]
+│   ├── session_resume.rs           # Resume, fork, and name sessions
+│   ├── system_prompts.rs           # Custom, preset, append system prompts
+│   ├── tool_permissions.rs         # Allow/deny lists, DefaultPermissionHandler
+│   ├── partial_messages.rs         # Stream incremental content blocks
+│   ├── advanced_tools.rs           # Vec<T>, bool params, doc comments
+│   ├── image_tool_results.rs       # Text + image multi-content results
+│   ├── hook_callbacks.rs           # HookCallback trait
+│   ├── hooks_guardrails.rs         # HookHandler validation and logging
+│   ├── agent_environment.rs        # Working directory, env vars, CLI path
+│   ├── advanced_config.rs          # Settings sources, output format, betas
+│   ├── rate_limit_handling.rs      # RateLimitEvent and ClawError matching
+│   ├── transport_layer.rs          # CliDiscovery and Transport trait
+│   ├── file_checkpointing.rs       # File snapshots and rewind_files()
+│   ├── interrupt_and_status.rs     # interrupt() and mcp_status()
+│   ├── external_mcp.rs             # External MCP server config (stub)
+│   └── subagent_usage.rs           # AgentDefinition and subagent hooks
 ├── docs/                           # Documentation
 │   ├── QUICKSTART.md               # Step-by-step tutorial
 │   ├── HOOKS.md                    # Hook system guide
@@ -113,6 +124,7 @@ rusty_claw/                         # Workspace root
 │   ├── PERMISSIONS.md              # Permission modes and rules
 │   ├── SUBAGENTS.md                # Subagent definition and usage
 │   ├── MESSAGES.md                 # Message types reference
+│   ├── TROUBLESHOOT_MCP.md         # MCP integration troubleshooting
 │   └── SPEC.md                     # Technical specification
 └── CONTRIBUTING.md                 # Development guide
 ```
@@ -155,18 +167,18 @@ pub trait Transport: Send + Sync {
 
 ### 2.2 SubprocessCLITransport
 
-Spawns `claude` CLI as a child process with the following arguments:
+Spawns `claude` CLI as a child process with space-separated arguments:
 
 ```
 claude \
-  --output-format=stream-json \    # NDJSON output
-  --verbose \                       # Include system messages
-  --max-turns={N} \                 # From options
-  --model={model} \                 # From options
-  --permission-mode={mode} \        # From options
-  --input-format=stream-json \      # Enable control protocol
-  --settings-sources="" \           # Isolation: no external settings
-  -p "{prompt}"                     # Initial prompt
+  --output-format stream-json \    # NDJSON output
+  --verbose \                      # Include system messages
+  --max-turns N \                  # From options (if set)
+  --model MODEL \                  # From options (if set)
+  --permission-mode MODE \         # From options (if set)
+  --input-format stream-json \     # Enable control protocol (client mode only)
+  --setting-sources "" \           # Isolation: no external settings (default)
+  -p "PROMPT"                      # Initial prompt
 ```
 
 **Implementation details:**
@@ -472,11 +484,11 @@ pub struct AgentDefinition {
 }
 ```
 
-Builder pattern via `derive_builder` or hand-rolled:
+Builder pattern (hand-rolled):
 
 ```rust
 let options = ClaudeAgentOptions::builder()
-    .allowed_tools(vec!["Read", "Bash"])
+    .allowed_tools(vec!["Read".to_string(), "Bash".to_string()])
     .permission_mode(PermissionMode::AcceptEdits)
     .max_turns(5)
     .build();
@@ -508,14 +520,23 @@ pub enum HookEvent {
 ### 6.2 Hook Registration
 
 ```rust
-#[derive(Debug, Clone)]
+/// Matcher for selective hook triggering, keyed by tool name.
+/// Used in ClaudeAgentOptions.hooks: HashMap<HookEvent, Vec<HookMatcher>>.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookMatcher {
-    /// Tool name pattern to match (e.g., "Bash", "mcp__*")
+    /// Tool name to match (e.g., "Bash", "Read"), or None to match all tools.
     pub tool_name: Option<String>,
-    /// The callback function
-    pub callback: Arc<dyn HookCallback>,
 }
 
+impl HookMatcher {
+    pub fn all() -> Self { Self { tool_name: None } }
+    pub fn tool(name: impl Into<String>) -> Self { Self { tool_name: Some(name.into()) } }
+    pub fn matches(&self, tool_name: &str) -> bool {
+        self.tool_name.as_deref().map_or(true, |p| p == tool_name)
+    }
+}
+
+/// Typed hook callback trait (alternative to HookHandler for structured input/output).
 #[async_trait]
 pub trait HookCallback: Send + Sync {
     async fn call(
@@ -524,6 +545,13 @@ pub trait HookCallback: Send + Sync {
         tool_use_id: Option<&str>,
         context: &HookContext,
     ) -> Result<HookResponse, ClawError>;
+}
+
+/// Raw hook handler trait used by ClaudeClient::register_hook().
+/// Receives the HookEvent and raw JSON input, returns raw JSON output.
+#[async_trait]
+pub trait HookHandler: Send + Sync {
+    async fn call(&self, hook_event: HookEvent, hook_input: Value) -> Result<Value, ClawError>;
 }
 ```
 
@@ -598,17 +626,25 @@ pub enum McpServerConfig {
 The SDK hosts MCP tools inside the Rust process. The CLI sends JSON-RPC requests via the control protocol, and the SDK routes them to the appropriate tool handler.
 
 ```rust
+/// Options-level registration: tells the CLI this server exists (name + version only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SdkMcpServer {
     pub name: String,
     pub version: String,
-    tools: Vec<SdkMcpTool>,
+}
+
+/// Runtime server implementation: holds the tool registry and handles JSON-RPC.
+pub struct SdkMcpServerImpl {
+    pub name: String,
+    pub version: String,
+    tools: HashMap<String, SdkMcpTool>,
 }
 
 pub struct SdkMcpTool {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
-    pub handler: Box<dyn ToolHandler>,
+    handler: Arc<dyn ToolHandler>,
 }
 
 #[async_trait]
@@ -616,18 +652,30 @@ pub trait ToolHandler: Send + Sync {
     async fn call(&self, args: serde_json::Value) -> Result<ToolResult, ClawError>;
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
     pub content: Vec<ToolContent>,
-    #[serde(default)]
-    pub is_error: bool,
+    /// None = success, Some(true) = error
+    #[serde(rename = "isError", skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+impl ToolResult {
+    pub fn text(text: impl Into<String>) -> Self { ... }
+    pub fn error(text: impl Into<String>) -> Self { ... }
+    pub fn new(content: Vec<ToolContent>) -> Self { ... }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ToolContent {
     Text { text: String },
-    Image { data: String, mime_type: String },
+    Image { data: String, #[serde(rename = "mimeType")] mime_type: String },
+}
+
+/// Registry managing multiple SdkMcpServerImpl instances; implements McpMessageHandler.
+pub struct SdkMcpServerRegistry {
+    servers: HashMap<String, SdkMcpServerImpl>,
 }
 ```
 
@@ -705,6 +753,9 @@ use thiserror::Error;
 pub enum ClawError {
     #[error("Claude Code CLI not found. Install it or set cli_path.")]
     CliNotFound,
+
+    #[error("Invalid Claude CLI version: expected >= 2.0.0, found {version}")]
+    InvalidCliVersion { version: String },
 
     #[error("Failed to connect to Claude Code CLI: {0}")]
     Connection(String),
@@ -788,12 +839,10 @@ Store representative NDJSON message sequences in `tests/fixtures/`:
 
 ```
 tests/fixtures/
-├── simple_query.ndjson       # Basic question/answer
-├── tool_use.ndjson           # Tool use + result cycle
-├── multi_turn.ndjson         # Multi-turn conversation
-├── error_response.ndjson     # Error scenarios
-├── hook_callback.ndjson      # Hook invocation flow
-└── mcp_tool_call.ndjson      # MCP tool invocation
+├── simple_query.ndjson       # Basic question/answer (System::Init + Assistant + Result::Success)
+├── tool_use.ndjson           # Tool use + result cycle (5 messages, 2 turns)
+├── error_response.ndjson     # Error result scenario (Result::Error with extra fields)
+└── thinking_content.ndjson   # Extended thinking tokens (ContentBlock::Thinking)
 ```
 
 ---

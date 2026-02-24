@@ -333,7 +333,7 @@ let options = ClaudeAgentOptions::builder()
     .build();
 ```
 
-This passes `--allowed-tools=mcp__math-tools__calculator,mcp__math-tools__add` to the CLI.
+This passes `--allowed-tools mcp__math-tools__calculator,mcp__math-tools__add` to the CLI.
 
 You can also use `disallowed_tools` to block specific tools:
 
@@ -498,4 +498,6 @@ let options = ClaudeAgentOptions::builder()
 - [SPEC.md](SPEC.md) -- Section 7: MCP Integration (full protocol spec)
 - [QUICKSTART.md](QUICKSTART.md) -- Getting started guide
 - [HOOKS.md](HOOKS.md) -- Lifecycle hooks (can match on `mcp__*` tool names)
-- `examples/custom_tool.rs` -- Working example with two tools
+- [`examples/custom_tool.rs`](../examples/custom_tool.rs) -- Working example with two tools (`word_count`, `repeat`)
+- [`examples/advanced_tools.rs`](../examples/advanced_tools.rs) -- `Vec<T>`, `bool` params, doc comments in `#[claw_tool]`
+- [`examples/image_tool_results.rs`](../examples/image_tool_results.rs) -- Multi-content results with text and image

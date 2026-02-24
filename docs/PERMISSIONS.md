@@ -57,8 +57,8 @@ The `PermissionMode` enum controls the default policy when no explicit allow/den
 | Mode | CLI Arg | Default Policy | Description |
 |------|---------|---------------|-------------|
 | `Default` | `"default"` | Allow | No auto-approvals; relies on CLI defaults |
-| `AcceptEdits` | `"accept-edits"` | Allow | Auto-approve file edit operations |
-| `BypassPermissions` | `"bypass-permissions"` | Allow | Skip all permission checks |
+| `AcceptEdits` | `"acceptEdits"` | Allow | Auto-approve file edit operations |
+| `BypassPermissions` | `"bypassPermissions"` | Allow | Skip all permission checks |
 | `Plan` | `"plan"` | Allow | Planning mode -- no tool execution |
 | `Allow` | `"allow"` | Allow | Allow all tools without prompting |
 | `Ask` | `"ask"` | Deny | Prompt user for each tool use |
@@ -85,7 +85,7 @@ let options = ClaudeAgentOptions::builder()
 let client = ClaudeClient::new(options)?;
 ```
 
-The mode is converted to a CLI argument via `to_cli_arg()` and passed as `--permission-mode=<value>` when spawning the Claude CLI process.
+The mode is converted to a CLI argument via `to_cli_arg()` and passed as `--permission-mode <value>` when spawning the Claude CLI process.
 
 ```rust
 // Multiple options together
@@ -111,7 +111,7 @@ let options = ClaudeAgentOptions::builder()
     .build();
 ```
 
-Passed to the CLI as `--allowed-tools=Read,Bash`.
+Passed to the CLI as `--allowed-tools Read,Bash`.
 
 When `allowed_tools` is empty, it imposes no restrictions -- all tools are candidates for the default policy.
 
@@ -125,7 +125,7 @@ let options = ClaudeAgentOptions::builder()
     .build();
 ```
 
-Passed to the CLI as `--disallowed-tools=Bash,Write`.
+Passed to the CLI as `--disallowed-tools Bash,Write`.
 
 ### permission_prompt_tool_allowlist
 
@@ -376,4 +376,5 @@ let options = ClaudeAgentOptions::builder()
 - [HOOKS.md](./HOOKS.md) -- Hook system architecture and event types
 - [SPEC.md](./SPEC.md) -- Full SDK specification
 - [QUICKSTART.md](./QUICKSTART.md) -- Getting started guide
-- `crates/rusty_claw/examples/hooks_guardrails.rs` -- Working example of hooks and guardrails
+- [`examples/hooks_guardrails.rs`](../examples/hooks_guardrails.rs) -- Working example of hooks and guardrails
+- [`examples/tool_permissions.rs`](../examples/tool_permissions.rs) -- Working example of allow/deny lists and DefaultPermissionHandler

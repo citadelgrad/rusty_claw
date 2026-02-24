@@ -142,9 +142,11 @@ Lifecycle event hooks for validation, monitoring, and security:
 async fn guard_bash(
     input: HookInput, _id: Option<&str>, _ctx: &HookContext,
 ) -> Result<HookResponse, ClawError> {
-    if let Some(cmd) = input.tool_input.and_then(|v| v["command"].as_str().map(String::from)) {
-        if cmd.contains("rm -rf") {
-            return Ok(HookResponse::deny("Dangerous command blocked"));
+    if let Some(tool_input) = &input.tool_input {
+        if let Some(cmd) = tool_input["command"].as_str() {
+            if cmd.contains("rm -rf") {
+                return Ok(HookResponse::deny("Dangerous command blocked"));
+            }
         }
     }
     Ok(HookResponse::allow("OK"))
