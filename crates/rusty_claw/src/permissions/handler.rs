@@ -43,12 +43,12 @@ impl DefaultPermissionHandler {
 
     /// Check if a tool is explicitly allowed.
     fn is_allowed(&self, tool_name: &str) -> bool {
-        self.allowed_tools.is_empty() || self.allowed_tools.contains(&tool_name.to_string())
+        self.allowed_tools.is_empty() || self.allowed_tools.iter().any(|t| t == tool_name)
     }
 
     /// Check if a tool is explicitly denied.
     fn is_denied(&self, tool_name: &str) -> bool {
-        self.disallowed_tools.contains(&tool_name.to_string())
+        self.disallowed_tools.iter().any(|t| t == tool_name)
     }
 
     /// Evaluate default policy based on PermissionMode.
@@ -70,25 +70,17 @@ impl DefaultPermissionHandler {
 #[async_trait]
 impl CanUseToolHandler for DefaultPermissionHandler {
     async fn can_use_tool(&self, tool_name: &str, _tool_input: &Value) -> Result<bool, ClawError> {
-        // 1. Check explicit deny list first (highest priority)
+        // 1. Explicit deny list has highest priority
         if self.is_denied(tool_name) {
             return Ok(false);
         }
 
-        // 2. Check explicit allow list
+        // 2. Explicit allow list (only applies when non-empty)
         if !self.allowed_tools.is_empty() && self.is_allowed(tool_name) {
             return Ok(true);
         }
 
-        // 3. Check if allowed_tools is empty (no restrictions)
-        if self.allowed_tools.is_empty() && !self.is_denied(tool_name) {
-            // Fall through to default policy
-        } else if !self.allowed_tools.is_empty() && !self.is_allowed(tool_name) {
-            // Tool not in allowlist and allowlist is not empty
-            return Ok(self.default_policy());
-        }
-
-        // 4. Fall back to default policy
+        // 3. Fall back to default policy (covers: tool not in allowlist, or allowlist empty)
         Ok(self.default_policy())
     }
 }

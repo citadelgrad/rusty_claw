@@ -293,12 +293,24 @@ impl ControlProtocol {
         });
 
         // Send to CLI (NDJSON requires trailing newline)
-        let mut bytes = serde_json::to_vec(&msg)?;
+        // Clean up the pending entry on any send failure: the CLI will never respond
+        // to a request it never received, so leaving the entry in the map would leak it
+        // (cancel() is only called on timeout, which never fires after early return).
+        let mut bytes = match serde_json::to_vec(&msg) {
+            Ok(b) => b,
+            Err(e) => {
+                self.pending.cancel(&id).await;
+                return Err(e.into());
+            }
+        };
         bytes.push(b'\n');
-        self.transport
-            .write(&bytes)
-            .await
-            .map_err(|e| ClawError::Connection(format!("Failed to send control request: {}", e)))?;
+        if let Err(e) = self.transport.write(&bytes).await {
+            self.pending.cancel(&id).await;
+            return Err(ClawError::Connection(format!(
+                "Failed to send control request: {}",
+                e
+            )));
+        }
 
         // Wait for response with timeout (60s to accommodate MCP server startup)
         match tokio::time::timeout(Duration::from_secs(60), rx).await {

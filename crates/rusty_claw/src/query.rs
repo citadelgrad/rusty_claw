@@ -135,9 +135,11 @@ pub async fn query(
         opts.to_cli_args(&prompt)
     } else {
         vec![
-            "--output-format=stream-json".to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
             "--verbose".to_string(),
-            "--setting-sources=".to_string(),
+            "--setting-sources".to_string(),
+            String::new(),
             "-p".to_string(),
             prompt,
         ]

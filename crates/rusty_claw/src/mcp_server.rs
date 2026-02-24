@@ -710,12 +710,14 @@ impl SdkMcpServerImpl {
         };
 
         // Execute tool
+        // Tool execution failures are MCP application-level errors (isError: true),
+        // not JSON-RPC protocol errors. Using -32603 would tell the caller that
+        // the *protocol* failed, not the tool itself.
         match tool.execute(arguments).await {
             Ok(result) => Ok(json_rpc_success(request["id"].clone(), result)),
-            Err(e) => Ok(json_rpc_error(
+            Err(e) => Ok(json_rpc_success(
                 request["id"].clone(),
-                -32603,
-                format!("Tool execution failed: {}", e),
+                ToolResult::error(format!("Tool execution failed: {}", e)),
             )),
         }
     }
@@ -1124,7 +1126,12 @@ mod tests {
             }
         });
         let response = server.handle_jsonrpc(request).await.unwrap();
-        assert!(response["error"].is_object());
+        // Tool execution failures are MCP application-level errors (isError: true in result),
+        // not JSON-RPC protocol errors. The response must be a success response at the
+        // protocol level so the caller can read the error content.
+        assert!(response["error"].is_null());
+        assert!(response["result"].is_object());
+        assert_eq!(response["result"]["isError"], true);
     }
 
     #[tokio::test]
