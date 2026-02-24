@@ -854,14 +854,13 @@ impl ClaudeAgentOptions {
         Ok(Some(serde_json::to_string(&payload)?))
     }
 
-    /// Convert options to Claude CLI arguments
+    /// Convert options to Claude CLI base arguments (without the prompt)
     ///
     /// This method generates CLI arguments compatible with the Claude CLI,
-    /// following SPEC.md section 2.2.
-    ///
-    /// # Arguments
-    ///
-    /// * `prompt` - The user prompt to include in arguments
+    /// following SPEC.md section 2.2. It produces all arguments **except**
+    /// the `-p <prompt>` flag so the same logic can be shared between the
+    /// one-shot `query()` path and the interactive `ClaudeClient::connect()`
+    /// path (which uses `--input-format stream-json` instead).
     ///
     /// # Example
     ///
@@ -873,11 +872,13 @@ impl ClaudeAgentOptions {
     ///     .permission_mode(PermissionMode::AcceptEdits)
     ///     .build();
     ///
-    /// let args = options.to_cli_args("test prompt");
+    /// let args = options.to_base_cli_args();
     /// assert!(args.contains(&"--max-turns".to_string()));
     /// assert!(args.contains(&"5".to_string()));
+    /// // No "-p" flag — caller appends the prompt or --input-format as needed
+    /// assert!(!args.contains(&"-p".to_string()));
     /// ```
-    pub fn to_cli_args(&self, prompt: &str) -> Vec<String> {
+    pub fn to_base_cli_args(&self) -> Vec<String> {
         let mut args = vec![
             "--output-format".to_string(),
             "stream-json".to_string(),
@@ -1069,10 +1070,37 @@ impl ClaudeAgentOptions {
             args.push(mcp_json);
         }
 
+        args
+    }
+
+    /// Convert options to Claude CLI arguments for one-shot query mode
+    ///
+    /// Calls [`to_base_cli_args()`] and appends `-p <prompt>` at the end.
+    ///
+    /// # Arguments
+    ///
+    /// * `prompt` - The user prompt to include in arguments
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use rusty_claw::options::{ClaudeAgentOptions, PermissionMode};
+    ///
+    /// let options = ClaudeAgentOptions::builder()
+    ///     .max_turns(5)
+    ///     .permission_mode(PermissionMode::AcceptEdits)
+    ///     .build();
+    ///
+    /// let args = options.to_cli_args("test prompt");
+    /// assert!(args.contains(&"--max-turns".to_string()));
+    /// assert!(args.contains(&"5".to_string()));
+    /// assert!(args.contains(&"-p".to_string()));
+    /// ```
+    pub fn to_cli_args(&self, prompt: &str) -> Vec<String> {
+        let mut args = self.to_base_cli_args();
         // Prompt
         args.push("-p".to_string());
         args.push(prompt.to_string());
-
         args
     }
 }

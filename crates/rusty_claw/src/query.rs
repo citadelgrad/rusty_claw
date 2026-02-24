@@ -303,6 +303,15 @@ pub async fn query_with_messages(
 }
 
 /// Build CLI args for stream-json input mode (no -p flag)
+///
+/// TODO: This is a third independent arg-building path that duplicates logic from
+/// `ClaudeAgentOptions::to_base_cli_args()` in options.rs. It is missing several
+/// options that to_base_cli_args() handles: `continue_conversation`, `fork_session`,
+/// `session_name`, `enable_file_checkpointing`, `resume`, `max_budget_usd`,
+/// `max_thinking_tokens`, `sandbox_settings`, `add_dirs`, `append_system_prompt`,
+/// `disallowed_tools`, `permission_prompt_tool_allowlist`, and `mcp_servers` (via
+/// --mcp-config). Refactor this function to call `opts.to_base_cli_args()` (with
+/// `--input-format stream-json` prepended/appended) so all three code paths stay in sync.
 fn build_stream_args(options: Option<&ClaudeAgentOptions>) -> Vec<String> {
     let mut args = vec![
         "--output-format".to_string(),

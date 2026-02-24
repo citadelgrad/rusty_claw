@@ -276,8 +276,10 @@ pub struct ClaudeClient {
     /// This is primarily useful for testing with mock transports.
     pre_transport: Option<Box<dyn Transport>>,
 
-    /// MCP handler registered before connect (applied during connect, before initialize)
-    pending_mcp_handler: Option<Arc<dyn McpMessageHandler>>,
+    /// MCP handler registered before connect (applied during connect, before initialize).
+    /// Wrapped in Mutex to allow registration via &self (matching the signature of
+    /// register_can_use_tool_handler and register_hook).
+    pending_mcp_handler: std::sync::Mutex<Option<Arc<dyn McpMessageHandler>>>,
 }
 
 impl ClaudeClient {
@@ -309,7 +311,7 @@ impl ClaudeClient {
             options,
             current_turn_tx: Arc::new(Mutex::new(None)),
             is_initialized: Arc::new(AtomicBool::new(false)),
-            pending_mcp_handler: None,
+            pending_mcp_handler: std::sync::Mutex::new(None),
         })
     }
 
@@ -350,7 +352,7 @@ impl ClaudeClient {
             options,
             current_turn_tx: Arc::new(Mutex::new(None)),
             is_initialized: Arc::new(AtomicBool::new(false)),
-            pending_mcp_handler: None,
+            pending_mcp_handler: std::sync::Mutex::new(None),
         })
     }
 
@@ -418,98 +420,13 @@ impl ClaudeClient {
             if let Some(pre) = self.pre_transport.take() {
                 pre
             } else {
-            // Build CLI args for interactive mode
-            let mut cli_args = vec![
-                "--output-format".to_string(),
-                "stream-json".to_string(),
-                "--verbose".to_string(),
-            ];
+            // Build CLI args for interactive mode using the shared base arg builder.
+            // to_base_cli_args() produces all flags except "-p <prompt>", which is
+            // not used in interactive mode — prompts arrive via send_message().
+            let mut cli_args = self.options.to_base_cli_args();
 
-            // Add options (but not the prompt - that comes via send_message)
-            if let Some(max_turns) = self.options.max_turns {
-                cli_args.push("--max-turns".to_string());
-                cli_args.push(max_turns.to_string());
-            }
-            if let Some(model) = &self.options.model {
-                cli_args.push("--model".to_string());
-                cli_args.push(model.clone());
-            }
-            if let Some(mode) = &self.options.permission_mode {
-                cli_args.push("--permission-mode".to_string());
-                cli_args.push(mode.to_cli_arg().to_string());
-            }
-
-            // System prompt
-            if let Some(sys_prompt) = &self.options.system_prompt {
-                match sys_prompt {
-                    crate::options::SystemPrompt::Custom(text) => {
-                        cli_args.push("--system-prompt".to_string());
-                        cli_args.push(text.clone());
-                    }
-                    crate::options::SystemPrompt::Preset { preset } => {
-                        cli_args.push("--system-prompt-preset".to_string());
-                        cli_args.push(preset.clone());
-                    }
-                }
-            }
-
-            // Append system prompt
-            if let Some(append) = &self.options.append_system_prompt {
-                cli_args.push("--append-system-prompt".to_string());
-                cli_args.push(append.clone());
-            }
-
-            // Allowed tools
-            if !self.options.allowed_tools.is_empty() {
-                cli_args.push("--allowed-tools".to_string());
-                cli_args.push(self.options.allowed_tools.join(","));
-            }
-
-            // Disallowed tools
-            if !self.options.disallowed_tools.is_empty() {
-                cli_args.push("--disallowed-tools".to_string());
-                cli_args.push(self.options.disallowed_tools.join(","));
-            }
-
-            // Session options
-            if let Some(resume) = &self.options.resume {
-                cli_args.push("--resume".to_string());
-                cli_args.push(resume.clone());
-            }
-            if self.options.fork_session {
-                cli_args.push("--fork-session".to_string());
-            }
-            if let Some(name) = &self.options.session_name {
-                cli_args.push("--session-name".to_string());
-                cli_args.push(name.clone());
-            }
-            if self.options.enable_file_checkpointing {
-                cli_args.push("--enable-file-checkpointing".to_string());
-            }
-
-            // Settings isolation for reproducibility
-            match &self.options.setting_sources {
-                Some(sources) => {
-                    cli_args.push("--setting-sources".to_string());
-                    cli_args.push(sources.join(","));
-                }
-                None => {
-                    cli_args.push("--setting-sources".to_string());
-                    cli_args.push(String::new());
-                }
-            }
-
-            // External MCP servers (stdio/SSE/HTTP) — passed as --mcp-config with inline JSON.
-            // NOTE: SDK-hosted servers (SdkMcpServerImpl) are intentionally excluded here.
-            // The CLI hangs when type:"sdk" entries appear in --mcp-config.
-            // SDK servers are registered via the sdkMcpServers field in the initialize
-            // control request (sent by control.initialize()).
-            if let Ok(Some(mcp_json)) = self.options.to_mcp_config_json() {
-                cli_args.push("--mcp-config".to_string());
-                cli_args.push(mcp_json);
-            }
-
-            // Enable control protocol input
+            // Enable control protocol input (interactive mode only — one-shot query
+            // path uses -p instead and never enters this branch).
             cli_args.push("--input-format".to_string());
             cli_args.push("stream-json".to_string());
 
@@ -554,7 +471,11 @@ impl ClaudeClient {
         // Apply pending MCP handler BEFORE initialize.
         // The CLI sends mcp_message requests during init, so the handler
         // must be registered before the initialize handshake.
-        if let Some(handler) = self.pending_mcp_handler.take() {
+        // Extract pending handler while the lock is held, then drop the lock before any await.
+        // Holding a std::sync::MutexGuard across an await point is a clippy error
+        // (it would block other threads trying to acquire the lock during the async suspension).
+        let pending_mcp = self.pending_mcp_handler.lock().unwrap_or_else(|e| e.into_inner()).take();
+        if let Some(handler) = pending_mcp {
             let mut handlers = control.handlers().await;
             handlers.register_mcp_message(handler);
         }
@@ -562,7 +483,7 @@ impl ClaudeClient {
         // Apply permission handler from options BEFORE initialize.
         // can_use_tool requests can arrive during initialization, so the
         // handler must be in place before the initialize handshake.
-        if let Some(handler) = self.options.permission_handler.take() {
+        if let Some(handler) = self.options.permission_handler.clone() {
             let mut handlers = control.handlers().await;
             handlers.register_can_use_tool(handler);
         }
@@ -1285,14 +1206,16 @@ impl ClaudeClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn register_mcp_message_handler(&mut self, handler: Arc<dyn McpMessageHandler>) {
+    pub async fn register_mcp_message_handler(&self, handler: Arc<dyn McpMessageHandler>) {
         if let Some(control) = &self.control {
             // Already connected: register directly on control protocol
             let mut handlers = control.handlers().await;
             handlers.register_mcp_message(handler);
         } else {
             // Not yet connected: store for apply during connect(), before initialize()
-            self.pending_mcp_handler = Some(handler);
+            if let Ok(mut guard) = self.pending_mcp_handler.lock() {
+                *guard = Some(handler);
+            }
         }
     }
 }
@@ -1709,7 +1632,7 @@ mod tests {
         }
 
         let options = ClaudeAgentOptions::default();
-        let mut client = ClaudeClient::new(options).unwrap();
+        let client = ClaudeClient::new(options).unwrap();
 
         // These should not panic even when not connected
         client
