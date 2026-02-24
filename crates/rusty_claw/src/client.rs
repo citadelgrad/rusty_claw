@@ -543,6 +543,37 @@ impl ClaudeClient {
         Ok(())
     }
 
+    /// Disconnect from the Claude CLI process
+    ///
+    /// This is an alias for [`close()`](ClaudeClient::close) that matches the Python SDK's
+    /// `ClaudeSDKClient.disconnect()` method name. Both methods perform the same
+    /// graceful shutdown of the underlying transport.
+    ///
+    /// Prefer [`close()`](ClaudeClient::close) in idiomatic Rust code.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClawError`] if the transport shutdown fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use rusty_claw::prelude::*;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let options = ClaudeAgentOptions::default();
+    /// # let mut client = ClaudeClient::new(options)?;
+    /// # client.connect().await?;
+    /// // Python-style disconnect() works the same as close()
+    /// client.disconnect().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn disconnect(&mut self) -> Result<(), ClawError> {
+        self.close().await
+    }
+
     // Message sending methods
 
     /// Send a message to Claude and get a stream of responses for this turn
