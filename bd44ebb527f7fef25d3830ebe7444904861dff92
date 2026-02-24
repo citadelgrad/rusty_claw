@@ -1,0 +1,25 @@
+crates/rusty_claw/src/permissions/handler.rs
+  c30a25e9896bbd89 90-91,93
+docs/plans/2026-02-24-feat-python-sdk-parity-swarm-plan.md
+  c30a25e9896bbd89 1-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "bd44ebb527f7fef25d3830ebe7444904861dff92",
+  "prompts": {
+    "c30a25e9896bbd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "346caff8-89ac-4a53-84fc-c8741c768472",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 218,
+      "overriden_lines": 0
+    }
+  }
+}
