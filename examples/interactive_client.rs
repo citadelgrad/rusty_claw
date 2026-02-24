@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 println!("[tool error: {}]", content);
                             }
                         }
-                        ContentBlock::Thinking { thinking } => {
+                        ContentBlock::Thinking { thinking, .. } => {
                             println!("[thinking: {}...]", &thinking[..thinking.len().min(50)]);
                         }
                     }

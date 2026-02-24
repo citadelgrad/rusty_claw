@@ -88,8 +88,8 @@ mod response;
 mod types;
 
 pub use callback::HookCallback;
-pub use response::{HookResponse, PermissionDecision};
-pub use types::{HookContext, HookInput};
+pub use response::{HookOutput, HookResponse, PermissionDecision};
+pub use types::{HookContext, HookEventInput, HookInput};
 
 // Re-export HookEvent and HookMatcher from options for convenience
 pub use crate::options::{HookEvent, HookMatcher};

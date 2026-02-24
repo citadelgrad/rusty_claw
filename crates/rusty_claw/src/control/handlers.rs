@@ -11,6 +11,7 @@
 //!
 //! ```
 //! use rusty_claw::control::handlers::{CanUseToolHandler, ControlHandlers};
+//! use rusty_claw::permissions::PermissionDecision;
 //! use rusty_claw::error::ClawError;
 //! use async_trait::async_trait;
 //! use std::sync::Arc;
@@ -23,9 +24,13 @@
 //!         &self,
 //!         tool_name: &str,
 //!         _tool_input: &serde_json::Value,
-//!     ) -> Result<bool, ClawError> {
+//!     ) -> Result<PermissionDecision, ClawError> {
 //!         // Only allow Read and Grep tools
-//!         Ok(matches!(tool_name, "Read" | "Grep"))
+//!         if matches!(tool_name, "Read" | "Grep") {
+//!             Ok(PermissionDecision::Allow { updated_input: None })
+//!         } else {
+//!             Ok(PermissionDecision::Deny { interrupt: false })
+//!         }
 //!     }
 //! }
 //!
@@ -40,6 +45,7 @@ use std::sync::Arc;
 
 use crate::error::ClawError;
 use crate::options::HookEvent;
+use crate::permissions::PermissionDecision;
 
 /// Handler for can_use_tool permission callbacks
 ///
@@ -49,6 +55,7 @@ use crate::options::HookEvent;
 /// - Log tool usage
 /// - Apply custom permission logic
 /// - Prompt the user for confirmation
+/// - Modify (sanitize) tool inputs before execution
 ///
 /// # Default Behavior
 ///
@@ -58,6 +65,7 @@ use crate::options::HookEvent;
 ///
 /// ```
 /// use rusty_claw::control::handlers::CanUseToolHandler;
+/// use rusty_claw::permissions::PermissionDecision;
 /// use rusty_claw::error::ClawError;
 /// use async_trait::async_trait;
 ///
@@ -69,9 +77,13 @@ use crate::options::HookEvent;
 ///         &self,
 ///         tool_name: &str,
 ///         _tool_input: &serde_json::Value,
-///     ) -> Result<bool, ClawError> {
+///     ) -> Result<PermissionDecision, ClawError> {
 ///         // Only allow read-only tools
-///         Ok(matches!(tool_name, "Read" | "Grep" | "Glob"))
+///         if matches!(tool_name, "Read" | "Grep" | "Glob") {
+///             Ok(PermissionDecision::Allow { updated_input: None })
+///         } else {
+///             Ok(PermissionDecision::Deny { interrupt: false })
+///         }
 ///     }
 /// }
 /// ```
@@ -86,10 +98,16 @@ pub trait CanUseToolHandler: Send + Sync {
     ///
     /// # Returns
     ///
-    /// * `Ok(true)` - Allow tool execution
-    /// * `Ok(false)` - Deny tool execution
+    /// * `Ok(PermissionDecision::Allow { updated_input })` - Allow tool execution,
+    ///   optionally with a modified input value
+    /// * `Ok(PermissionDecision::Deny { interrupt })` - Deny tool execution,
+    ///   optionally interrupting the entire session
     /// * `Err(...)` - Handler error (tool will be denied)
-    async fn can_use_tool(&self, tool_name: &str, tool_input: &Value) -> Result<bool, ClawError>;
+    async fn can_use_tool(
+        &self,
+        tool_name: &str,
+        tool_input: &Value,
+    ) -> Result<PermissionDecision, ClawError>;
 }
 
 /// Handler for hook callbacks
@@ -240,6 +258,7 @@ impl ControlHandlers {
     ///
     /// ```
     /// use rusty_claw::control::handlers::{CanUseToolHandler, ControlHandlers};
+    /// use rusty_claw::permissions::PermissionDecision;
     /// use rusty_claw::error::ClawError;
     /// use async_trait::async_trait;
     /// use std::sync::Arc;
@@ -252,8 +271,12 @@ impl ControlHandlers {
     ///         &self,
     ///         tool_name: &str,
     ///         _tool_input: &serde_json::Value,
-    ///     ) -> Result<bool, ClawError> {
-    ///         Ok(tool_name != "Bash")
+    ///     ) -> Result<PermissionDecision, ClawError> {
+    ///         if tool_name != "Bash" {
+    ///             Ok(PermissionDecision::Allow { updated_input: None })
+    ///         } else {
+    ///             Ok(PermissionDecision::Deny { interrupt: false })
+    ///         }
     ///     }
     /// }
     ///
@@ -342,8 +365,10 @@ impl ControlHandlers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::permissions::PermissionDecision;
     use serde_json::json;
 
+    #[derive(Debug)]
     struct MockCanUseToolHandler;
 
     #[async_trait]
@@ -352,8 +377,12 @@ mod tests {
             &self,
             tool_name: &str,
             _tool_input: &Value,
-        ) -> Result<bool, ClawError> {
-            Ok(tool_name == "Read")
+        ) -> Result<PermissionDecision, ClawError> {
+            if tool_name == "Read" {
+                Ok(PermissionDecision::Allow { updated_input: None })
+            } else {
+                Ok(PermissionDecision::Deny { interrupt: false })
+            }
         }
     }
 
@@ -382,8 +411,14 @@ mod tests {
     #[tokio::test]
     async fn test_can_use_tool_handler() {
         let handler = MockCanUseToolHandler;
-        assert!(handler.can_use_tool("Read", &json!({})).await.unwrap());
-        assert!(!handler.can_use_tool("Bash", &json!({})).await.unwrap());
+        assert!(matches!(
+            handler.can_use_tool("Read", &json!({})).await.unwrap(),
+            PermissionDecision::Allow { .. }
+        ));
+        assert!(matches!(
+            handler.can_use_tool("Bash", &json!({})).await.unwrap(),
+            PermissionDecision::Deny { .. }
+        ));
     }
 
     #[tokio::test]
@@ -436,5 +471,67 @@ mod tests {
         let mut handlers = ControlHandlers::new();
         handlers.register_mcp_message(Arc::new(MockMcpHandler));
         assert!(handlers.mcp_message.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_permission_decision_allow_with_updated_input() {
+        #[derive(Debug)]
+    struct SanitizingHandler;
+
+        #[async_trait]
+        impl CanUseToolHandler for SanitizingHandler {
+            async fn can_use_tool(
+                &self,
+                _tool_name: &str,
+                _tool_input: &Value,
+            ) -> Result<PermissionDecision, ClawError> {
+                // Return sanitized input
+                Ok(PermissionDecision::Allow {
+                    updated_input: Some(json!({ "command": "echo safe" })),
+                })
+            }
+        }
+
+        let handler = SanitizingHandler;
+        let decision = handler
+            .can_use_tool("Bash", &json!({ "command": "rm -rf /" }))
+            .await
+            .unwrap();
+        match decision {
+            PermissionDecision::Allow { updated_input } => {
+                assert!(updated_input.is_some());
+                assert_eq!(updated_input.unwrap()["command"], "echo safe");
+            }
+            PermissionDecision::Deny { .. } => panic!("Expected Allow"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_permission_decision_deny_with_interrupt() {
+        #[derive(Debug)]
+    struct InterruptingHandler;
+
+        #[async_trait]
+        impl CanUseToolHandler for InterruptingHandler {
+            async fn can_use_tool(
+                &self,
+                _tool_name: &str,
+                _tool_input: &Value,
+            ) -> Result<PermissionDecision, ClawError> {
+                Ok(PermissionDecision::Deny { interrupt: true })
+            }
+        }
+
+        let handler = InterruptingHandler;
+        let decision = handler
+            .can_use_tool("Bash", &json!({}))
+            .await
+            .unwrap();
+        match decision {
+            PermissionDecision::Deny { interrupt } => {
+                assert!(interrupt);
+            }
+            PermissionDecision::Allow { .. } => panic!("Expected Deny"),
+        }
     }
 }

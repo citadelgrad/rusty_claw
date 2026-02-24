@@ -127,6 +127,54 @@ pub enum SystemMessage {
     CompactBoundary,
 }
 
+/// Error types that can be reported in an [`AssistantMessage`]
+///
+/// These errors are surfaced by the Claude API as part of the assistant message stream
+/// (not transport/connection errors). Common in production agentic workflows.
+///
+/// # Example
+///
+/// ```
+/// use rusty_claw::messages::AssistantMessageError;
+///
+/// let err = AssistantMessageError::RateLimit;
+/// assert_eq!(err.as_str(), "rate_limit");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssistantMessageError {
+    /// API authentication failed
+    AuthenticationFailed,
+    /// Account billing error (e.g., payment required)
+    BillingError,
+    /// Rate limit exceeded
+    RateLimit,
+    /// Invalid request parameters
+    InvalidRequest,
+    /// Internal server error
+    ServerError,
+    /// Overloaded — try again later
+    Overloaded,
+    /// Unknown or unrecognized error type
+    #[serde(other)]
+    Unknown,
+}
+
+impl AssistantMessageError {
+    /// Return the snake_case string representation of this error
+    pub fn as_str(&self) -> &str {
+        match self {
+            AssistantMessageError::AuthenticationFailed => "authentication_failed",
+            AssistantMessageError::BillingError => "billing_error",
+            AssistantMessageError::RateLimit => "rate_limit",
+            AssistantMessageError::InvalidRequest => "invalid_request",
+            AssistantMessageError::ServerError => "server_error",
+            AssistantMessageError::Overloaded => "overloaded",
+            AssistantMessageError::Unknown => "unknown",
+        }
+    }
+}
+
 /// Assistant message containing API response with content blocks
 ///
 /// Represents a response from Claude with text, tool use, or thinking content.
@@ -140,6 +188,12 @@ pub struct AssistantMessage {
     /// Optional duration of the API request in milliseconds
     #[serde(default)]
     pub duration_ms: Option<u64>,
+    /// API-level error if Claude returned an error in this message
+    ///
+    /// Present for errors like rate limits and billing issues that occur
+    /// mid-session rather than as connection/transport failures.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<AssistantMessageError>,
 }
 
 /// User input message
@@ -149,6 +203,12 @@ pub struct AssistantMessage {
 pub struct UserMessage {
     /// The API message with role and content
     pub message: ApiMessage,
+    /// Unique message identifier (used for session rewinding)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
+    /// Parent tool use ID, present when this message contains a tool result
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_tool_use_id: Option<String>,
 }
 
 /// Result message variants discriminated by `subtype` field
@@ -164,6 +224,10 @@ pub enum ResultMessage {
         /// Optional execution duration in milliseconds
         #[serde(default)]
         duration_ms: Option<u64>,
+        /// Optional API latency in milliseconds (time spent in API calls specifically,
+        /// separate from total `duration_ms` which includes local processing)
+        #[serde(default)]
+        duration_api_ms: Option<u64>,
         /// Optional number of conversation turns
         #[serde(default)]
         num_turns: Option<u32>,
@@ -176,6 +240,18 @@ pub enum ResultMessage {
         /// Optional token usage information
         #[serde(default)]
         usage: Option<UsageInfo>,
+        /// Structured output when the session was configured with a JSON schema output format.
+        ///
+        /// When `output_format` is set to a JSON schema in [`ClaudeAgentOptions`],
+        /// this field contains the parsed structured response from Claude.
+        #[serde(default)]
+        structured_output: Option<serde_json::Value>,
+        /// Whether the result represents an error condition.
+        ///
+        /// Provides a flat boolean flag for simpler pattern matching without
+        /// fully destructuring the `ResultMessage` enum.
+        #[serde(default)]
+        is_error: Option<bool>,
     },
     /// Error during execution
     Error {
@@ -223,6 +299,12 @@ pub enum ContentBlock {
     Thinking {
         /// The thinking content text
         thinking: String,
+        /// Cryptographic signature for extended thinking verification
+        ///
+        /// Part of the extended thinking security model — preserved faithfully
+        /// so callers can verify or forward thinking blocks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
 }
 
@@ -456,6 +538,7 @@ mod tests {
                 session_id,
                 total_cost_usd,
                 usage,
+                ..
             }) => {
                 assert_eq!(result, "Task completed");
                 assert_eq!(duration_ms, Some(1000));
@@ -587,7 +670,7 @@ mod tests {
 
         let block: ContentBlock = serde_json::from_value(json).unwrap();
         match block {
-            ContentBlock::Thinking { thinking } => {
+            ContentBlock::Thinking { thinking, .. } => {
                 assert_eq!(thinking, "Let me consider this...");
             }
             _ => panic!("Expected Thinking block"),
@@ -717,11 +800,13 @@ mod tests {
                     },
                     ContentBlock::Thinking {
                         thinking: "This should work...".to_string(),
+                        signature: None,
                     },
                 ],
             },
             parent_tool_use_id: None,
             duration_ms: Some(150),
+            error: None,
         });
 
         // Serialize to JSON
@@ -978,7 +1063,7 @@ mod tests {
                 assert_eq!(assistant_msg.message.content.len(), 2);
                 // First block: Thinking
                 match &assistant_msg.message.content[0] {
-                    ContentBlock::Thinking { thinking } => {
+                    ContentBlock::Thinking { thinking, .. } => {
                         assert!(thinking.contains("analyze this request"));
                         assert!(thinking.contains("bash tool"));
                     }

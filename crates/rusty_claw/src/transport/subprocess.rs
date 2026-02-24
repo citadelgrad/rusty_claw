@@ -86,6 +86,12 @@ pub struct SubprocessCLITransport {
 
     /// Captured stderr for error diagnostics
     stderr_buffer: Arc<Mutex<String>>,
+
+    /// Optional callback invoked for each stderr line
+    stderr_callback: Option<Arc<dyn Fn(String) + Send + Sync>>,
+
+    /// Optional buffer size limit for stdout reads (currently informational)
+    max_buffer_size: Option<usize>,
 }
 
 impl SubprocessCLITransport {
@@ -127,6 +133,8 @@ impl SubprocessCLITransport {
             cwd: None,
             env: HashMap::new(),
             stderr_buffer: Arc::new(Mutex::new(String::new())),
+            stderr_callback: None,
+            max_buffer_size: None,
         }
     }
 
@@ -138,6 +146,20 @@ impl SubprocessCLITransport {
     /// Set environment variables for the subprocess
     pub fn set_env(&mut self, env: HashMap<String, String>) {
         self.env = env;
+    }
+
+    /// Set callback for stderr lines
+    ///
+    /// The callback is invoked for each line of CLI stderr output (without trailing newline).
+    pub fn set_stderr_callback(&mut self, callback: impl Fn(String) + Send + Sync + 'static) {
+        self.stderr_callback = Some(Arc::new(callback));
+    }
+
+    /// Set maximum buffer size for stdout reads
+    ///
+    /// Currently stored for future use; the underlying `BufReader` uses default buffering.
+    pub fn set_max_buffer_size(&mut self, size: usize) {
+        self.max_buffer_size = Some(size);
     }
 
     /// Spawn background task to read stdout and parse NDJSON messages
@@ -184,7 +206,11 @@ impl SubprocessCLITransport {
     }
 
     /// Spawn background task to read stderr for diagnostics
-    fn spawn_stderr_task(stderr: tokio::process::ChildStderr, buffer: Arc<Mutex<String>>) {
+    fn spawn_stderr_task(
+        stderr: tokio::process::ChildStderr,
+        buffer: Arc<Mutex<String>>,
+        callback: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    ) {
         tokio::spawn(async move {
             let reader = BufReader::new(stderr);
             let mut lines = reader.lines();
@@ -193,6 +219,9 @@ impl SubprocessCLITransport {
 
             while let Ok(Some(line)) = lines.next_line().await {
                 warn!("CLI stderr: {}", line);
+                if let Some(cb) = &callback {
+                    cb(line.clone());
+                }
                 let mut buf = buffer.lock().await;
                 buf.push_str(&line);
                 buf.push('\n');
@@ -387,7 +416,7 @@ impl Transport for SubprocessCLITransport {
 
         // Spawn background tasks
         Self::spawn_reader_task(stdout, tx, self.connected.clone());
-        Self::spawn_stderr_task(stderr, self.stderr_buffer.clone());
+        Self::spawn_stderr_task(stderr, self.stderr_buffer.clone(), self.stderr_callback.clone());
         let _monitor =
             Self::spawn_monitor_task(child, self.connected.clone(), self.stderr_buffer.clone());
 

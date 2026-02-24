@@ -48,7 +48,7 @@
 //! let mut hooks = HashMap::new();
 //! hooks.insert(
 //!     HookEvent::SubagentStart,
-//!     vec![HookMatcher { tool_name: Some("Bash".to_string()) }],
+//!     vec![HookMatcher::tool("Bash")],
 //! );
 //!
 //! // Build options and connect client
@@ -223,25 +223,28 @@ pub mod prelude {
     //!
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
-    pub use crate::client::{ClaudeClient, ResponseStream};
+    pub use crate::client::{with_client, ClaudeClient, ClaudeSDKClient, ResponseStream};
     pub use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
     pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
     pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
     pub use crate::hooks::{
-        HookCallback, HookContext, HookInput, HookResponse, PermissionDecision,
+        HookCallback, HookContext, HookEventInput, HookInput, HookOutput, HookResponse, PermissionDecision,
     };
     pub use crate::mcp_server::{
-        SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent, ToolHandler, ToolResult,
+        create_sdk_mcp_server, SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent,
+        ToolHandler, ToolResult, TypedToolHandler,
     };
     pub use crate::messages::{
-        ApiMessage, AssistantMessage, ContentBlock, McpServerInfo, Message, ResultMessage,
+        ApiMessage, AssistantMessage, AssistantMessageError, ContentBlock, McpServerInfo, Message, ResultMessage,
         StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
     pub use crate::options::{
-        ClaudeAgentOptions, HookEvent, HookMatcher, PermissionMode, SystemPrompt,
+        ClaudeAgentOptions, HookEvent, HookMatcher, McpHttpServerConfig,
+        McpSSEServerConfig, McpServerConfig, McpStdioServerConfig, PermissionMode, SdkBeta,
+        SystemPrompt,
     };
     pub use crate::permissions::DefaultPermissionHandler;
-    pub use crate::query::query;
+    pub use crate::query::{query, query_with_messages};
     pub use crate::transport::{CliDiscovery, SubprocessCLITransport, Transport};
 }

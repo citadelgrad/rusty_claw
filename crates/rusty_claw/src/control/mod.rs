@@ -164,8 +164,8 @@ impl ControlProtocol {
     ///         &self,
     ///         _tool_name: &str,
     ///         _tool_input: &serde_json::Value,
-    ///     ) -> Result<bool, ClawError> {
-    ///         Ok(true)
+    ///     ) -> Result<rusty_claw::permissions::PermissionDecision, ClawError> {
+    ///         Ok(rusty_claw::permissions::PermissionDecision::Allow { updated_input: None })
     ///     }
     /// }
     ///
@@ -420,9 +420,26 @@ impl ControlProtocol {
                 };
                 if let Some(handler) = handler {
                     match handler.can_use_tool(&tool_name, &tool_input).await {
-                        Ok(allowed) => ControlResponse::Success {
-                            data: json!({ "allowed": allowed }),
-                        },
+                        Ok(decision) => {
+                            use crate::permissions::PermissionDecision;
+                            match decision {
+                                PermissionDecision::Allow { updated_input } => {
+                                    let mut data = json!({ "allowed": true });
+                                    if let Some(input) = updated_input {
+                                        data["updatedInput"] = input;
+                                    }
+                                    ControlResponse::Success { data }
+                                }
+                                PermissionDecision::Deny { interrupt } => {
+                                    ControlResponse::Success {
+                                        data: json!({
+                                            "allowed": false,
+                                            "interrupt": interrupt,
+                                        }),
+                                    }
+                                }
+                            }
+                        }
                         Err(e) => ControlResponse::Error {
                             error: e.to_string(),
                             extra: json!({}),
@@ -605,6 +622,7 @@ mod tests {
     }
 
     // Mock handlers
+    #[derive(Debug)]
     struct MockCanUseToolHandler;
 
     #[async_trait]
@@ -613,8 +631,12 @@ mod tests {
             &self,
             tool_name: &str,
             _tool_input: &Value,
-        ) -> Result<bool, ClawError> {
-            Ok(tool_name == "Read")
+        ) -> Result<crate::permissions::PermissionDecision, ClawError> {
+            if tool_name == "Read" {
+                Ok(crate::permissions::PermissionDecision::Allow { updated_input: None })
+            } else {
+                Ok(crate::permissions::PermissionDecision::Deny { interrupt: false })
+            }
         }
     }
 

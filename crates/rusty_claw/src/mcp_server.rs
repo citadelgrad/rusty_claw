@@ -95,7 +95,7 @@
 //! ```
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -286,6 +286,111 @@ pub trait ToolHandler: Send + Sync {
     async fn call(&self, args: Value) -> Result<ToolResult, ClawError>;
 }
 
+/// Type-safe wrapper for tool handlers with automatic JSON deserialization
+///
+/// `TypedToolHandler<I>` wraps a closure (or async function) that accepts a
+/// concrete Rust type `I` instead of raw [`serde_json::Value`]. The wrapper
+/// automatically deserializes the incoming `args: Value` into `I` before
+/// calling the inner handler, providing descriptive error messages when
+/// deserialization fails.
+///
+/// # Type Parameters
+///
+/// * `I` - Input type that implements [`serde::de::DeserializeOwned`]
+///
+/// # Example
+///
+/// ```
+/// use rusty_claw::mcp_server::{TypedToolHandler, ToolHandler, ToolResult};
+/// use serde::Deserialize;
+/// use serde_json::json;
+///
+/// #[derive(Deserialize)]
+/// struct AddInput {
+///     a: f64,
+///     b: f64,
+/// }
+///
+/// # fn make_handler() -> impl rusty_claw::mcp_server::ToolHandler {
+/// let handler = TypedToolHandler::new(|input: AddInput| async move {
+///     Ok(ToolResult::text(format!("Result: {}", input.a + input.b)))
+/// });
+/// # handler
+/// # }
+/// ```
+pub struct TypedToolHandler<I, F, Fut>
+where
+    I: DeserializeOwned + Send + Sync + 'static,
+    F: Fn(I) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<ToolResult, ClawError>> + Send + 'static,
+{
+    handler: F,
+    _phantom: std::marker::PhantomData<I>,
+}
+
+impl<I, F, Fut> TypedToolHandler<I, F, Fut>
+where
+    I: DeserializeOwned + Send + Sync + 'static,
+    F: Fn(I) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<ToolResult, ClawError>> + Send + 'static,
+{
+    /// Create a new typed tool handler from an async closure
+    ///
+    /// The closure receives a fully-typed `I` value, automatically deserialized
+    /// from the incoming `serde_json::Value` args. If deserialization fails, a
+    /// descriptive [`ClawError::ToolExecution`] is returned that includes the
+    /// target type name and the raw JSON.
+    ///
+    /// # Arguments
+    ///
+    /// * `handler` - Async closure that accepts a typed input `I`
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use rusty_claw::mcp_server::{TypedToolHandler, ToolResult};
+    /// use serde::Deserialize;
+    ///
+    /// #[derive(Deserialize)]
+    /// struct MyInput {
+    ///     name: String,
+    /// }
+    ///
+    /// # fn make_handler() -> impl rusty_claw::mcp_server::ToolHandler {
+    /// let handler = TypedToolHandler::new(|input: MyInput| async move {
+    ///     Ok(ToolResult::text(format!("Hello, {}!", input.name)))
+    /// });
+    /// # handler
+    /// # }
+    /// ```
+    pub fn new(handler: F) -> Self {
+        Self {
+            handler,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+#[async_trait]
+impl<I, F, Fut> ToolHandler for TypedToolHandler<I, F, Fut>
+where
+    I: DeserializeOwned + Send + Sync + 'static,
+    F: Fn(I) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = Result<ToolResult, ClawError>> + Send + 'static,
+{
+    async fn call(&self, args: Value) -> Result<ToolResult, ClawError> {
+        let typed_input: I = serde_json::from_value(args.clone()).map_err(|e| {
+            ClawError::ToolExecution(format!(
+                "Failed to deserialize tool args into {}: {}. Raw args: {}",
+                std::any::type_name::<I>(),
+                e,
+                args
+            ))
+        })?;
+        (self.handler)(typed_input).await
+    }
+}
+
 /// MCP tool wrapper with metadata and handler
 ///
 /// Represents a single tool that can be invoked via MCP.
@@ -317,6 +422,7 @@ pub trait ToolHandler: Send + Sync {
 ///     Arc::new(MyHandler),
 /// );
 /// ```
+
 #[derive(Clone)]
 pub struct SdkMcpTool {
     /// Tool name (must be unique within server)
@@ -517,7 +623,56 @@ impl SdkMcpServerImpl {
         }
     }
 
-    /// Register a tool with this server
+    /// Create a new MCP server pre-populated with tools
+    ///
+    /// Convenience constructor that combines [`SdkMcpServerImpl::new`] and
+    /// [`SdkMcpServerImpl::register_tool`] calls. Useful when you have a
+    /// complete list of tools available upfront.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Server name (must match name in `ClaudeAgentOptions`)
+    /// * `version` - Server version string
+    /// * `tools` - Tools to register immediately
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use rusty_claw::mcp_server::{SdkMcpServerImpl, SdkMcpTool, ToolHandler, ToolResult};
+    /// use rusty_claw::prelude::*;
+    /// use async_trait::async_trait;
+    /// use serde_json::{json, Value};
+    /// use std::sync::Arc;
+    ///
+    /// struct MyHandler;
+    ///
+    /// #[async_trait]
+    /// impl ToolHandler for MyHandler {
+    ///     async fn call(&self, _args: Value) -> Result<ToolResult, ClawError> {
+    ///         Ok(ToolResult::text("Done"))
+    ///     }
+    /// }
+    ///
+    /// let tools = vec![
+    ///     SdkMcpTool::new("tool1", "Does X", json!({"type": "object"}), Arc::new(MyHandler)),
+    ///     SdkMcpTool::new("tool2", "Does Y", json!({"type": "object"}), Arc::new(MyHandler)),
+    /// ];
+    /// let server = SdkMcpServerImpl::from_tools("my_server", "1.0.0", tools);
+    /// assert_eq!(server.list_tools().len(), 2);
+    /// ```
+    pub fn from_tools(
+        name: impl Into<String>,
+        version: impl Into<String>,
+        tools: Vec<SdkMcpTool>,
+    ) -> Self {
+        let mut server = Self::new(name, version);
+        for tool in tools {
+            server.register_tool(tool);
+        }
+        server
+    }
+
+        /// Register a tool with this server
     ///
     /// # Arguments
     ///
@@ -721,6 +876,67 @@ impl SdkMcpServerImpl {
             )),
         }
     }
+}
+
+/// Create an SDK MCP server from a name, version, and list of tools
+///
+/// This is the primary convenience function for creating an SDK-hosted MCP server.
+/// It replaces the manual sequence of:
+/// 1. `SdkMcpServerImpl::new()`
+/// 2. `SdkMcpTool::new()` for each tool
+/// 3. `server.register_tool()` for each tool
+/// 4. `Arc::new(server)`
+///
+/// # Arguments
+///
+/// * `name` - Server name (must match the entry in `ClaudeAgentOptions` `mcp_servers`)
+/// * `version` - Server version string
+/// * `tools` - Tools to register with the server
+///
+/// # Returns
+///
+/// An `Arc<SdkMcpServerImpl>` ready to pass to
+/// `ClaudeClient::register_mcp_message_handler`.
+///
+/// # Example
+///
+/// ```
+/// use rusty_claw::mcp_server::{create_sdk_mcp_server, SdkMcpTool, ToolHandler, ToolResult};
+/// use rusty_claw::prelude::*;
+/// use async_trait::async_trait;
+/// use serde_json::{json, Value};
+/// use std::sync::Arc;
+///
+/// struct EchoHandler;
+///
+/// #[async_trait]
+/// impl ToolHandler for EchoHandler {
+///     async fn call(&self, args: Value) -> Result<ToolResult, ClawError> {
+///         let msg = args["message"].as_str().unwrap_or("(none)");
+///         Ok(ToolResult::text(format!("Echo: {}", msg)))
+///     }
+/// }
+///
+/// let server = create_sdk_mcp_server(
+///     "my_tools",
+///     "1.0.0",
+///     vec![
+///         SdkMcpTool::new(
+///             "echo",
+///             "Echo a message",
+///             json!({"type": "object", "properties": {"message": {"type": "string"}}}),
+///             Arc::new(EchoHandler),
+///         ),
+///     ],
+/// );
+/// // server is Arc<SdkMcpServerImpl>, ready for register_mcp_message_handler()
+/// ```
+pub fn create_sdk_mcp_server(
+    name: impl Into<String>,
+    version: impl Into<String>,
+    tools: Vec<SdkMcpTool>,
+) -> Arc<SdkMcpServerImpl> {
+    Arc::new(SdkMcpServerImpl::from_tools(name, version, tools))
 }
 
 /// Registry for multiple MCP servers
@@ -1204,5 +1420,150 @@ mod tests {
         assert_eq!(response["id"], 1);
         assert_eq!(response["error"]["code"], -32601);
         assert_eq!(response["error"]["message"], "Method not found");
+    }
+
+    // Tests for TypedToolHandler (6c4)
+
+    #[tokio::test]
+    async fn test_typed_tool_handler_success() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct AddInput {
+            a: f64,
+            b: f64,
+        }
+
+        let handler = TypedToolHandler::new(|input: AddInput| async move {
+            Ok(ToolResult::text(format!("{}", input.a + input.b)))
+        });
+
+        let result = handler.call(json!({"a": 3.0, "b": 4.0})).await.unwrap();
+        match &result.content[0] {
+            ToolContent::Text { text } => assert_eq!(text, "7"),
+            _ => panic!("Expected text"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_typed_tool_handler_deserialization_error() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct StrictInput {
+            count: u32,
+        }
+
+        let handler = TypedToolHandler::new(|_input: StrictInput| async move {
+            Ok(ToolResult::text("ok"))
+        });
+
+        // "count" is missing → deserialization error
+        let result = handler.call(json!({"wrong_field": 1})).await;
+        assert!(result.is_err(), "Expected error for bad input");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Failed to deserialize tool args"), "Error should mention deserialization: {}", err);
+    }
+
+    #[tokio::test]
+    async fn test_typed_tool_handler_optional_field() {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct Input {
+            required: String,
+            optional: Option<String>,
+        }
+
+        let handler = TypedToolHandler::new(|input: Input| async move {
+            let suffix = input.optional.unwrap_or_else(|| "none".to_string());
+            Ok(ToolResult::text(format!("{}:{}", input.required, suffix)))
+        });
+
+        // With optional field
+        let r1 = handler.call(json!({"required": "hello", "optional": "world"})).await.unwrap();
+        match &r1.content[0] {
+            ToolContent::Text { text } => assert_eq!(text, "hello:world"),
+            _ => panic!(),
+        }
+
+        // Without optional field
+        let r2 = handler.call(json!({"required": "hello"})).await.unwrap();
+        match &r2.content[0] {
+            ToolContent::Text { text } => assert_eq!(text, "hello:none"),
+            _ => panic!(),
+        }
+    }
+
+    // Tests for create_sdk_mcp_server and from_tools (abh)
+
+    #[test]
+    fn test_sdk_mcp_server_from_tools() {
+        let handler = Arc::new(MockHandler {
+            response: "ok".to_string(),
+        });
+        let tools = vec![
+            SdkMcpTool::new("t1", "Tool 1", json!({"type": "object"}), handler.clone()),
+            SdkMcpTool::new("t2", "Tool 2", json!({"type": "object"}), handler),
+        ];
+        let server = SdkMcpServerImpl::from_tools("my_server", "2.0.0", tools);
+        assert_eq!(server.name, "my_server");
+        assert_eq!(server.version, "2.0.0");
+        assert_eq!(server.list_tools().len(), 2);
+        assert!(server.get_tool("t1").is_some());
+        assert!(server.get_tool("t2").is_some());
+    }
+
+    #[test]
+    fn test_create_sdk_mcp_server() {
+        let handler = Arc::new(MockHandler {
+            response: "result".to_string(),
+        });
+        let server = create_sdk_mcp_server(
+            "test_server",
+            "1.0.0",
+            vec![SdkMcpTool::new(
+                "my_tool",
+                "Test",
+                json!({"type": "object"}),
+                handler,
+            )],
+        );
+        assert_eq!(server.name, "test_server");
+        assert_eq!(server.list_tools().len(), 1);
+    }
+
+    #[test]
+    fn test_create_sdk_mcp_server_empty() {
+        let server = create_sdk_mcp_server("empty_server", "0.1.0", vec![]);
+        assert_eq!(server.name, "empty_server");
+        assert_eq!(server.list_tools().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_sdk_mcp_server_can_handle_requests() {
+        let handler = Arc::new(MockHandler {
+            response: "hello".to_string(),
+        });
+        let server = create_sdk_mcp_server(
+            "hello_server",
+            "1.0.0",
+            vec![SdkMcpTool::new(
+                "greet",
+                "Greet",
+                json!({"type": "object"}),
+                handler,
+            )],
+        );
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "greet", "arguments": {}}
+        });
+        let response = server.handle_jsonrpc(request).await.unwrap();
+        assert_eq!(response["result"]["content"][0]["text"], "hello");
     }
 }

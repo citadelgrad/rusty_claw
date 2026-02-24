@@ -144,13 +144,22 @@ pub enum ControlRequest {
     /// ```json
     /// {
     ///   "subtype": "rewind_files",
-    ///   "message_id": "msg_123"
+    ///   "user_message_id": "msg_123"
     /// }
     /// ```
     RewindFiles {
         /// Message ID to rewind to
-        message_id: String,
+        ///
+        /// Renamed from `message_id` to `user_message_id` for parity with the
+        /// Python SDK's `SDKControlRewindFilesRequest.user_message_id`.
+        user_message_id: String,
     },
+
+    /// Get server information from the Claude CLI
+    ///
+    /// Returns version and capability information from the connected CLI process.
+    /// The response data includes at least a `"version"` field.
+    GetServerInfo,
 }
 
 /// Response to a control request
@@ -395,12 +404,19 @@ mod tests {
     #[test]
     fn test_control_request_rewind_files() {
         let req = ControlRequest::RewindFiles {
-            message_id: "msg_123".to_string(),
+            user_message_id: "msg_123".to_string(),
         };
 
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["subtype"], "rewind_files");
-        assert_eq!(json["message_id"], "msg_123");
+        assert_eq!(json["user_message_id"], "msg_123");
+    }
+
+    #[test]
+    fn test_control_request_get_server_info() {
+        let req = ControlRequest::GetServerInfo;
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(json["subtype"], "get_server_info");
     }
 
     #[test]

@@ -29,10 +29,12 @@
 //! }
 //! ```
 
+use serde_json::Value;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{Stream, StreamExt};
+
 
 use crate::error::ClawError;
 use crate::messages::Message;
@@ -170,6 +172,234 @@ pub async fn query(
 
     // Wrap in QueryStream to ensure transport outlives the stream
     Ok(QueryStream::new(transport, stream))
+}
+
+
+/// Execute a query that accepts a stream of input messages (multi-message input)
+///
+/// This function enables advanced agentic patterns where the initial input to Claude
+/// consists of multiple messages — for example, injecting system context, tool results,
+/// or a pre-built conversation history before the user's prompt.
+///
+/// Each item in `messages` is serialized as a NDJSON line and written to CLI stdin before
+/// stdin is closed. The CLI processes these as the input conversation.
+///
+/// # Arguments
+///
+/// * `messages` - An async stream of `serde_json::Value` items to send as input messages
+/// * `options` - Optional configuration using [`ClaudeAgentOptions`]
+///
+/// # Returns
+///
+/// A stream of `Result<Message, ClawError>` that yields messages until the CLI closes.
+///
+/// # Errors
+///
+/// - [`ClawError::CliNotFound`] if Claude CLI is not found
+/// - [`ClawError::InvalidCliVersion`] if CLI version < 2.0.0
+/// - [`ClawError::Connection`] if transport fails to connect
+/// - [`ClawError::JsonDecode`] if message parsing fails
+/// - [`ClawError::Io`] if writing messages to stdin fails
+///
+/// # Example
+///
+/// ```ignore
+/// use rusty_claw::query::query_with_messages;
+/// use rusty_claw::options::ClaudeAgentOptions;
+/// use serde_json::json;
+/// use tokio_stream::{StreamExt, iter as stream_iter};
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // Build an initial conversation with a system message + user prompt
+///     let messages = vec![
+///         json!({
+///             "type": "user",
+///             "message": {
+///                 "role": "user",
+///                 "content": [{"type": "text", "text": "What is 2 + 2?"}]
+///             }
+///         })
+///     ];
+///
+///     let mut stream = query_with_messages(
+///         stream_iter(messages),
+///         None,
+///     ).await?;
+///
+///     while let Some(result) = stream.next().await {
+///         match result {
+///             Ok(msg) => println!("{:?}", msg),
+///             Err(e) => eprintln!("Error: {}", e),
+///         }
+///     }
+///     Ok(())
+/// }
+/// ```
+pub async fn query_with_messages(
+    messages: impl Stream<Item = Value> + Unpin,
+    options: Option<ClaudeAgentOptions>,
+) -> Result<impl Stream<Item = Result<Message, ClawError>>, ClawError> {
+    // Build CLI args WITHOUT -p (prompt comes via stdin in stream-json mode)
+    let args = build_stream_args(options.as_ref());
+
+    // Create transport with auto-discovery
+    let mut transport = SubprocessCLITransport::new(
+        options.as_ref().and_then(|o| o.cli_path.clone()),
+        args,
+    );
+
+    // Apply working directory if configured
+    if let Some(cwd) = options.as_ref().and_then(|o| o.cwd.as_ref()) {
+        transport.set_cwd(cwd.clone());
+    }
+
+    // Apply environment variables if configured
+    if let Some(env) = options.as_ref().map(|o| &o.env).filter(|e| !e.is_empty()) {
+        transport.set_env(env.clone());
+    }
+
+    // Apply stderr callback if configured
+    if let Some(cb) = options.as_ref().and_then(|o| o.stderr_callback.as_ref()) {
+        let cb_clone = cb.clone();
+        transport.set_stderr_callback(move |line| cb_clone(line));
+    }
+
+    // Apply max buffer size if configured
+    if let Some(size) = options.as_ref().and_then(|o| o.max_buffer_size) {
+        transport.set_max_buffer_size(size);
+    }
+
+    // Connect to CLI
+    transport.connect().await?;
+
+    // Send all input messages as NDJSON lines
+    let mut messages = messages;
+    while let Some(msg) = messages.next().await {
+        let mut line = serde_json::to_string(&msg).map_err(ClawError::JsonDecode)?;
+        line.push('\n');
+        transport.write(line.as_bytes()).await?;
+    }
+
+    // Close stdin to signal end of input
+    transport.end_input().await?;
+
+    // Get the message receiver from transport
+    let rx = transport.messages();
+
+    // Convert receiver to stream and parse Message structs
+    let stream = UnboundedReceiverStream::new(rx).map(|result| {
+        result.and_then(|value| {
+            let raw = value.to_string();
+            serde_json::from_value::<Message>(value).map_err(|e| ClawError::MessageParse {
+                reason: e.to_string(),
+                raw,
+            })
+        })
+    });
+
+    // Wrap in QueryStream to ensure transport outlives the stream
+    Ok(QueryStream::new(transport, stream))
+}
+
+/// Build CLI args for stream-json input mode (no -p flag)
+fn build_stream_args(options: Option<&ClaudeAgentOptions>) -> Vec<String> {
+    let mut args = vec![
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+        "--input-format".to_string(),
+        "stream-json".to_string(),
+    ];
+
+    if let Some(opts) = options {
+        // Max turns
+        if let Some(max_turns) = opts.max_turns {
+            args.push("--max-turns".to_string());
+            args.push(max_turns.to_string());
+        }
+
+        // Model
+        if let Some(model) = &opts.model {
+            args.push("--model".to_string());
+            args.push(model.clone());
+        }
+
+        // Permission mode
+        if let Some(mode) = &opts.permission_mode {
+            args.push("--permission-mode".to_string());
+            args.push(mode.to_cli_arg().to_string());
+        }
+
+        // System prompt
+        if let Some(sys_prompt) = &opts.system_prompt {
+            match sys_prompt {
+                crate::options::SystemPrompt::Custom(text) => {
+                    args.push("--system-prompt".to_string());
+                    args.push(text.clone());
+                }
+                crate::options::SystemPrompt::Preset { preset } => {
+                    args.push("--system-prompt-preset".to_string());
+                    args.push(preset.clone());
+                }
+            }
+        }
+
+        // Allowed tools
+        if !opts.allowed_tools.is_empty() {
+            args.push("--allowed-tools".to_string());
+            args.push(opts.allowed_tools.join(","));
+        }
+
+        // Betas (one per flag)
+        for beta in &opts.betas {
+            args.push("--beta".to_string());
+            args.push(beta.clone());
+        }
+
+        // Model
+        if let Some(fallback) = &opts.fallback_model {
+            args.push("--fallback-model".to_string());
+            args.push(fallback.clone());
+        }
+
+        // User identifier
+        if let Some(user) = &opts.user {
+            args.push("--user".to_string());
+            args.push(user.clone());
+        }
+
+        // Settings isolation
+        match &opts.setting_sources {
+            Some(sources) => {
+                args.push("--setting-sources".to_string());
+                args.push(sources.join(","));
+            }
+            None => {
+                args.push("--setting-sources".to_string());
+                args.push(String::new());
+            }
+        }
+
+        // Extra args escape hatch
+        for (key, value) in &opts.extra_args {
+            let flag = if key.starts_with("--") {
+                key.clone()
+            } else {
+                format!("--{}", key)
+            };
+            args.push(flag);
+            if let Some(val) = value {
+                args.push(val.clone());
+            }
+        }
+    } else {
+        // Default: empty setting-sources for reproducibility
+        args.push("--setting-sources".to_string());
+        args.push(String::new());
+    }
+
+    args
 }
 
 #[cfg(test)]

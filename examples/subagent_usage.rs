@@ -56,15 +56,11 @@ async fn main() {
     let mut hooks = HashMap::new();
 
     // SubagentStart hook - matches Bash tool when subagent starts
-    let subagent_start_hook = HookMatcher {
-        tool_name: Some("Bash".to_string()),
-    };
+    let subagent_start_hook = HookMatcher::tool("Bash");
     hooks.insert(HookEvent::SubagentStart, vec![subagent_start_hook]);
 
     // SubagentStop hook - matches Bash tool when subagent stops
-    let subagent_stop_hook = HookMatcher {
-        tool_name: Some("Bash".to_string()),
-    };
+    let subagent_stop_hook = HookMatcher::tool("Bash");
     hooks.insert(HookEvent::SubagentStop, vec![subagent_stop_hook]);
 
     println!("Registered {} hook events:", hooks.len());

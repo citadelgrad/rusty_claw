@@ -1,7 +1,7 @@
 //! Advanced configuration — settings sources, output format, and betas.
 //!
 //! This example demonstrates lesser-used configuration options:
-//! - `.settings_sources()` — control which settings files the CLI reads
+//! - `.setting_sources()` — control which settings files the CLI reads
 //! - `.output_format()` — customize CLI output format
 //! - `.betas()` — enable beta/experimental features
 //!
@@ -34,14 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Default: no settings (isolated agent)
     let isolated = ClaudeAgentOptions::builder().max_turns(3).build();
-    println!("Default settings_sources: {:?}", isolated.settings_sources);
+    println!("Default settings_sources: {:?}", isolated.setting_sources);
 
     // Custom: only read local project settings
     let local_only = ClaudeAgentOptions::builder()
         .max_turns(3)
-        .settings_sources(vec!["local".to_string(), "project".to_string()])
+        .setting_sources(vec!["local".to_string(), "project".to_string()])
         .build();
-    println!("Custom settings_sources: {:?}", local_only.settings_sources);
+    println!("Custom settings_sources: {:?}", local_only.setting_sources);
 
     // Show how it affects CLI args
     let args = local_only.to_cli_args("test");
@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .max_turns(5)
         .model("claude-sonnet-4-5")
         .permission_mode(PermissionMode::AcceptEdits)
-        .settings_sources(vec!["local".to_string()])
+        .setting_sources(vec!["local".to_string()])
         .betas(vec!["extended-thinking".to_string()])
         .allowed_tools(vec!["Read".to_string(), "Grep".to_string()])
         .build();
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  model:            {:?}", advanced.model);
     println!("  max_turns:        {:?}", advanced.max_turns);
     println!("  permission_mode:  {:?}", advanced.permission_mode);
-    println!("  settings_sources: {:?}", advanced.settings_sources);
+    println!("  settings_sources: {:?}", advanced.setting_sources);
     println!("  betas:            {:?}", advanced.betas);
     println!("  allowed_tools:    {:?}", advanced.allowed_tools);
     println!();
