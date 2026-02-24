@@ -1,0 +1,29 @@
+crates/rusty_claw/src/query.rs
+  c30a25e9896bbd89 138-139,141-142
+crates/rusty_claw/src/control/mod.rs
+  c30a25e9896bbd89 296-305,307-309,312-313
+crates/rusty_claw/src/mcp_server.rs
+  c30a25e9896bbd89 713-715,718,720,1129-1134
+crates/rusty_claw/src/permissions/handler.rs
+  c30a25e9896bbd89 46,51,73,78,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "e08ea4df6dfae343e8b81999d12a2eaffe3ee635",
+  "prompts": {
+    "c30a25e9896bbd89": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "346caff8-89ac-4a53-84fc-c8741c768472",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 37,
+      "total_deletions": 24,
+      "accepted_lines": 35,
+      "overriden_lines": 0
+    }
+  }
+}
