@@ -33,16 +33,16 @@ impl CanUseToolHandler for ReadOnlyPermissionHandler {
         }
 
         // Allow Bash only for safe commands
-        if tool_name == "Bash" {
-            if let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str()) {
-                let safe = !cmd.contains("rm ") && !cmd.contains("mv ") && !cmd.contains("> ");
-                if safe {
-                    println!("  [Permission] ALLOW: Bash (safe command: {})", cmd);
-                    return Ok(true);
-                }
-                println!("  [Permission] DENY:  Bash (unsafe command: {})", cmd);
-                return Ok(false);
+        if tool_name == "Bash"
+            && let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str())
+        {
+            let safe = !cmd.contains("rm ") && !cmd.contains("mv ") && !cmd.contains("> ");
+            if safe {
+                println!("  [Permission] ALLOW: Bash (safe command: {})", cmd);
+                return Ok(true);
             }
+            println!("  [Permission] DENY:  Bash (unsafe command: {})", cmd);
+            return Ok(false);
         }
 
         // Deny everything else

@@ -32,19 +32,17 @@ impl HookCallback for SecurityHook {
         _tool_use_id: Option<&str>,
         _context: &HookContext,
     ) -> Result<HookResponse, ClawError> {
-        if let Some(tool_name) = &input.tool_name {
-            if tool_name == "Bash" {
-                if let Some(tool_input) = &input.tool_input {
-                    if let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str()) {
-                        for pattern in &self.blocked_patterns {
-                            if cmd.contains(pattern.as_str()) {
-                                return Ok(HookResponse::deny(format!(
-                                    "Blocked: command contains '{}'",
-                                    pattern
-                                )));
-                            }
-                        }
-                    }
+        if let Some(tool_name) = &input.tool_name
+            && tool_name == "Bash"
+            && let Some(tool_input) = &input.tool_input
+            && let Some(cmd) = tool_input.get("command").and_then(|v| v.as_str())
+        {
+            for pattern in &self.blocked_patterns {
+                if cmd.contains(pattern.as_str()) {
+                    return Ok(HookResponse::deny(format!(
+                        "Blocked: command contains '{}'",
+                        pattern
+                    )));
                 }
             }
         }

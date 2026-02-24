@@ -182,42 +182,36 @@ impl FnParam {
 
 /// Check if a type is Option<T>
 fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident == "Option";
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return segment.ident == "Option";
     }
     false
 }
 
 /// Extract inner type from Option<T>
 fn extract_option_inner(ty: &Type) -> Option<&Type> {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return Some(inner_ty);
-                    }
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Option"
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+    {
+        return Some(inner_ty);
     }
     None
 }
 
 /// Extract inner type from Vec<T>
 fn extract_vec_inner(ty: &Type) -> Option<&Type> {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Vec" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return Some(inner_ty);
-                    }
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Vec"
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first()
+    {
+        return Some(inner_ty);
     }
     None
 }
@@ -241,19 +235,19 @@ fn type_to_json_schema(ty: &Type) -> TokenStream2 {
     }
 
     // Handle basic types
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            let ident = segment.ident.to_string();
-            return match ident.as_str() {
-                "String" | "str" => quote! { serde_json::json!({"type": "string"}) },
-                "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-                | "u128" | "usize" | "f32" | "f64" => {
-                    quote! { serde_json::json!({"type": "number"}) }
-                }
-                "bool" => quote! { serde_json::json!({"type": "boolean"}) },
-                _ => quote! { serde_json::json!({"type": "object"}) }, // Fallback for custom types
-            };
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        let ident = segment.ident.to_string();
+        return match ident.as_str() {
+            "String" | "str" => quote! { serde_json::json!({"type": "string"}) },
+            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
+            | "u128" | "usize" | "f32" | "f64" => {
+                quote! { serde_json::json!({"type": "number"}) }
+            }
+            "bool" => quote! { serde_json::json!({"type": "boolean"}) },
+            _ => quote! { serde_json::json!({"type": "object"}) }, // Fallback for custom types
+        };
     }
 
     // Fallback for unknown types
@@ -386,19 +380,17 @@ fn extract_doc_comment(attrs: &[Attribute]) -> Option<String> {
     let mut doc = String::new();
 
     for attr in attrs {
-        if attr.path().is_ident("doc") {
-            if let Meta::NameValue(meta) = &attr.meta {
-                if let Expr::Lit(ExprLit {
-                    lit: Lit::Str(lit), ..
-                }) = &meta.value
-                {
-                    let line = lit.value();
-                    if !doc.is_empty() {
-                        doc.push(' ');
-                    }
-                    doc.push_str(line.trim());
-                }
+        if attr.path().is_ident("doc")
+            && let Meta::NameValue(meta) = &attr.meta
+            && let Expr::Lit(ExprLit {
+                lit: Lit::Str(lit), ..
+            }) = &meta.value
+        {
+            let line = lit.value();
+            if !doc.is_empty() {
+                doc.push(' ');
             }
+            doc.push_str(line.trim());
         }
     }
 
@@ -448,10 +440,10 @@ fn validate_function(func: &ItemFn) -> syn::Result<()> {
 
 /// Check if a type matches a specific type name
 fn matches_type_name(ty: &Type, name: &str) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident == name;
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return segment.ident == name;
     }
     false
 }
@@ -463,16 +455,13 @@ fn is_result_type(ty: &Type) -> bool {
 
 /// Extract the Ok type from Result<T, E>
 fn result_ok_type(ty: &Type) -> Option<&Type> {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Result" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(ok_ty)) = args.args.first() {
-                        return Some(ok_ty);
-                    }
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Result"
+        && let syn::PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(syn::GenericArgument::Type(ok_ty)) = args.args.first()
+    {
+        return Some(ok_ty);
     }
     None
 }

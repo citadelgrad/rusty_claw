@@ -79,10 +79,10 @@ impl CliDiscovery {
     /// ```
     pub async fn find(cli_path: Option<&Path>) -> Result<PathBuf, ClawError> {
         // 1. Check explicit cli_path argument
-        if let Some(path) = cli_path {
-            if path.exists() {
-                return Ok(path.to_path_buf());
-            }
+        if let Some(path) = cli_path
+            && path.exists()
+        {
+            return Ok(path.to_path_buf());
         }
 
         // 2. Check CLAUDE_CLI_PATH environment variable

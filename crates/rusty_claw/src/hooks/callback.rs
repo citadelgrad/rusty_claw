@@ -145,10 +145,10 @@ mod tests {
             _tool_use_id: Option<&str>,
             _context: &HookContext,
         ) -> Result<HookResponse, ClawError> {
-            if let Some(tool_name) = &input.tool_name {
-                if tool_name == "Bash" {
-                    return Ok(HookResponse::deny("Bash not allowed"));
-                }
+            if let Some(tool_name) = &input.tool_name
+                && tool_name == "Bash"
+            {
+                return Ok(HookResponse::deny("Bash not allowed"));
             }
             Ok(HookResponse::allow("OK"))
         }
@@ -174,10 +174,10 @@ mod tests {
             tool_use_id: Option<&str>,
             _context: &HookContext,
         ) -> Result<HookResponse, ClawError> {
-            if let Some(id) = tool_use_id {
-                if id == "dangerous-id" {
-                    return Ok(HookResponse::deny("Dangerous tool use ID"));
-                }
+            if let Some(id) = tool_use_id
+                && id == "dangerous-id"
+            {
+                return Ok(HookResponse::deny("Dangerous tool use ID"));
             }
             Ok(HookResponse::allow("Safe"))
         }
@@ -209,10 +209,10 @@ mod tests {
             _tool_use_id: Option<&str>,
             context: &HookContext,
         ) -> Result<HookResponse, ClawError> {
-            if let Some(tools) = &context.available_tools {
-                if tools.contains(&"Bash".to_string()) {
-                    return Ok(HookResponse::allow("Bash is available"));
-                }
+            if let Some(tools) = &context.available_tools
+                && tools.contains(&"Bash".to_string())
+            {
+                return Ok(HookResponse::allow("Bash is available"));
             }
             Ok(HookResponse::deny("Bash not available"))
         }
