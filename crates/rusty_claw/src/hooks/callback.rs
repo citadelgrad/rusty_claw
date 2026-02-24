@@ -3,7 +3,6 @@
 use crate::error::ClawError;
 use crate::hooks::{HookContext, HookInput, HookResponse};
 use async_trait::async_trait;
-use std::future::Future;
 
 /// Trait for hook callbacks
 ///
