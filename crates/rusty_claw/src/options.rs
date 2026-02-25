@@ -1075,7 +1075,7 @@ impl ClaudeAgentOptions {
 
     /// Convert options to Claude CLI arguments for one-shot query mode
     ///
-    /// Calls [`to_base_cli_args()`] and appends `-p <prompt>` at the end.
+    /// Calls [`Self::to_base_cli_args()`] and appends `-p <prompt>` at the end.
     ///
     /// # Arguments
     ///

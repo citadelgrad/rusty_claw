@@ -242,7 +242,7 @@ pub enum ResultMessage {
         usage: Option<UsageInfo>,
         /// Structured output when the session was configured with a JSON schema output format.
         ///
-        /// When `output_format` is set to a JSON schema in [`ClaudeAgentOptions`],
+        /// When `output_format` is set to a JSON schema in [`ClaudeAgentOptions`](crate::options::ClaudeAgentOptions),
         /// this field contains the parsed structured response from Claude.
         #[serde(default)]
         structured_output: Option<serde_json::Value>,

@@ -26,10 +26,10 @@
 //!
 //! # Permission Result
 //!
-//! Handlers return a rich [`PermissionDecision`] enum rather than a simple bool:
+//! Handlers return a rich [`PermissionDecision`](crate::permissions::PermissionDecision) enum rather than a simple bool:
 //!
-//! - [`PermissionDecision::Allow`] - Allow the tool, optionally with a modified input
-//! - [`PermissionDecision::Deny`] - Deny the tool, optionally interrupting the session
+//! - [`PermissionDecision::Allow`](crate::permissions::PermissionDecision::Allow) - Allow the tool, optionally with a modified input
+//! - [`PermissionDecision::Deny`](crate::permissions::PermissionDecision::Deny) - Deny the tool, optionally interrupting the session
 //!
 //! # Examples
 //!
