@@ -1,0 +1,31 @@
+crates/rusty_claw/src/messages.rs
+  2ca3c4ea9f6b8c65 245
+.github/workflows/release.yml
+  2ca3c4ea9f6b8c65 1-71
+crates/rusty_claw/src/options.rs
+  2ca3c4ea9f6b8c65 1078
+CHANGELOG.md
+  2ca3c4ea9f6b8c65 1-26
+crates/rusty_claw/src/permissions/mod.rs
+  2ca3c4ea9f6b8c65 29,31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "5803fa180aa84ab27984aacbb9952426cb0c9bc7",
+  "prompts": {
+    "2ca3c4ea9f6b8c65": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "995a3cf0-7d39-4574-9b45-89493ecf39b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 102,
+      "total_deletions": 5,
+      "accepted_lines": 102,
+      "overriden_lines": 0
+    }
+  }
+}
