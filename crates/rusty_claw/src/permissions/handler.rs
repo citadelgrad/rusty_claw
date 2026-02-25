@@ -83,12 +83,16 @@ impl CanUseToolHandler for DefaultPermissionHandler {
 
         // 2. Explicit allow list (only applies when non-empty)
         if !self.allowed_tools.is_empty() && self.is_allowed(tool_name) {
-            return Ok(PermissionDecision::Allow { updated_input: None });
+            return Ok(PermissionDecision::Allow {
+                updated_input: None,
+            });
         }
 
         // 3. Fall back to default policy (covers: tool not in allowlist, or allowlist empty)
         if self.default_policy() {
-            Ok(PermissionDecision::Allow { updated_input: None })
+            Ok(PermissionDecision::Allow {
+                updated_input: None,
+            })
         } else {
             Ok(PermissionDecision::Deny { interrupt: false })
         }
@@ -166,9 +170,15 @@ mod tests {
             .mode(PermissionMode::Allow)
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("read", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -177,9 +187,15 @@ mod tests {
             .mode(PermissionMode::Deny)
             .build();
 
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("read", &Value::Null).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -189,9 +205,15 @@ mod tests {
             .allowed_tools(vec!["bash".to_string(), "read".to_string()])
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("read", &Value::Null).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -201,9 +223,15 @@ mod tests {
             .disallowed_tools(vec!["bash".to_string(), "write".to_string()])
             .build();
 
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("read", &Value::Null).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -214,7 +242,9 @@ mod tests {
             .disallowed_tools(vec!["bash".to_string()])
             .build();
 
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -224,7 +254,9 @@ mod tests {
             .build();
 
         // Ask mode should default to deny, expecting CLI to prompt
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -234,7 +266,9 @@ mod tests {
             .build();
 
         // Custom mode should default to deny, expecting hooks
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -243,13 +277,17 @@ mod tests {
             .mode(PermissionMode::Default)
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
 
         let handler = DefaultPermissionHandler::builder()
             .mode(PermissionMode::AcceptEdits)
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -260,7 +298,9 @@ mod tests {
             .disallowed_tools(vec![])
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
 
         let handler = DefaultPermissionHandler::builder()
             .mode(PermissionMode::Deny)
@@ -268,7 +308,9 @@ mod tests {
             .disallowed_tools(vec![])
             .build();
 
-        assert!(is_denied(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -278,9 +320,13 @@ mod tests {
             .allowed_tools(vec!["bash".to_string()])
             .build();
 
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
         // Tools not in allowlist should follow default policy
-        assert!(is_allowed(handler.can_use_tool("read", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -288,7 +334,9 @@ mod tests {
         let handler = DefaultPermissionHandler::builder().build();
 
         // Should use Default mode with empty lists
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -298,8 +346,12 @@ mod tests {
             .build();
 
         // Legacy modes should allow all tools
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -309,7 +361,9 @@ mod tests {
             .build();
 
         // Plan mode should allow all tools (legacy behavior)
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -325,14 +379,22 @@ mod tests {
             .build();
 
         // bash and read are in allowlist
-        assert!(is_allowed(handler.can_use_tool("bash", &Value::Null).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("read", &Value::Null).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &Value::Null).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &Value::Null).await.unwrap()
+        ));
 
         // write is in both allowlist and denylist - deny wins
-        assert!(is_denied(handler.can_use_tool("write", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("write", &Value::Null).await.unwrap()
+        ));
 
         // grep not in allowlist, but not denied - follows default policy
-        assert!(is_denied(handler.can_use_tool("grep", &Value::Null).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("grep", &Value::Null).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -347,7 +409,9 @@ mod tests {
             "dangerous": true
         });
 
-        assert!(is_allowed(handler.can_use_tool("bash", &complex_input).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("bash", &complex_input).await.unwrap()
+        ));
     }
 
     // Integration scenarios
@@ -364,14 +428,26 @@ mod tests {
             .build();
 
         // Read operations allowed
-        assert!(is_allowed(handler.can_use_tool("read", &json!({})).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("glob", &json!({})).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("grep", &json!({})).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &json!({})).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("glob", &json!({})).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("grep", &json!({})).await.unwrap()
+        ));
 
         // Write operations denied
-        assert!(is_denied(handler.can_use_tool("write", &json!({})).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("edit", &json!({})).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("bash", &json!({})).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("write", &json!({})).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("edit", &json!({})).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &json!({})).await.unwrap()
+        ));
     }
 
     #[tokio::test]
@@ -387,13 +463,23 @@ mod tests {
             .build();
 
         // Safe tools allowed
-        assert!(is_allowed(handler.can_use_tool("read", &json!({})).await.unwrap()));
-        assert!(is_allowed(handler.can_use_tool("grep", &json!({})).await.unwrap()));
+        assert!(is_allowed(
+            handler.can_use_tool("read", &json!({})).await.unwrap()
+        ));
+        assert!(is_allowed(
+            handler.can_use_tool("grep", &json!({})).await.unwrap()
+        ));
 
         // Dangerous tools denied
-        assert!(is_denied(handler.can_use_tool("bash", &json!({})).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("write", &json!({})).await.unwrap()));
-        assert!(is_denied(handler.can_use_tool("delete", &json!({})).await.unwrap()));
+        assert!(is_denied(
+            handler.can_use_tool("bash", &json!({})).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("write", &json!({})).await.unwrap()
+        ));
+        assert!(is_denied(
+            handler.can_use_tool("delete", &json!({})).await.unwrap()
+        ));
     }
 
     #[tokio::test]

@@ -20,7 +20,7 @@
 
 use async_trait::async_trait;
 use rusty_claw::prelude::*;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 // Hook 1: Guardrail hook - Validates tool usage to block dangerous operations

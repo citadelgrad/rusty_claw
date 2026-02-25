@@ -117,8 +117,6 @@ impl PermissionMode {
     }
 }
 
-
-
 // ============================================================================
 // External MCP Server Configuration Types (bvo, 9be, xik)
 // ============================================================================
@@ -712,7 +710,10 @@ impl std::fmt::Debug for ClaudeAgentOptions {
             .field("allowed_tools", &self.allowed_tools)
             .field("disallowed_tools", &self.disallowed_tools)
             .field("permission_mode", &self.permission_mode)
-            .field("permission_prompt_tool_allowlist", &self.permission_prompt_tool_allowlist)
+            .field(
+                "permission_prompt_tool_allowlist",
+                &self.permission_prompt_tool_allowlist,
+            )
             .field("mcp_servers", &"<McpServerConfig map>")
             .field("sdk_mcp_servers", &self.sdk_mcp_servers)
             .field("hooks", &self.hooks)
@@ -743,7 +744,10 @@ impl std::fmt::Debug for ClaudeAgentOptions {
             )
             .field(
                 "permission_handler",
-                &self.permission_handler.as_ref().map(|_| "<CanUseToolHandler>"),
+                &self
+                    .permission_handler
+                    .as_ref()
+                    .map(|_| "<CanUseToolHandler>"),
             )
             .finish()
     }
@@ -806,7 +810,6 @@ impl ClaudeAgentOptions {
     pub fn builder() -> ClaudeAgentOptionsBuilder {
         ClaudeAgentOptionsBuilder::default()
     }
-
 
     /// Serialize `mcp_servers` to the JSON format expected by `--mcp-config`.
     ///
@@ -1263,7 +1266,10 @@ impl ClaudeAgentOptionsBuilder {
     ///
     /// This builder method is kept for backward compatibility.
     /// Prefer [`ClaudeAgentOptionsBuilder::setting_sources`] in new code.
-    #[deprecated(since = "0.4.0", note = "Renamed to `setting_sources` to match Python SDK")]
+    #[deprecated(
+        since = "0.4.0",
+        note = "Renamed to `setting_sources` to match Python SDK"
+    )]
     #[allow(deprecated)]
     pub fn settings_sources(mut self, sources: Vec<String>) -> Self {
         self.inner.setting_sources = Some(sources);
@@ -1677,7 +1683,10 @@ mod tests {
     #[test]
     fn test_to_cli_args_betas() {
         let opts = ClaudeAgentOptions::builder()
-            .betas(vec!["beta-feature-1".to_string(), "beta-feature-2".to_string()])
+            .betas(vec![
+                "beta-feature-1".to_string(),
+                "beta-feature-2".to_string(),
+            ])
             .build();
 
         let args = opts.to_cli_args("test");
@@ -1712,9 +1721,7 @@ mod tests {
 
     #[test]
     fn test_to_cli_args_max_budget_usd() {
-        let opts = ClaudeAgentOptions::builder()
-            .max_budget_usd(10.5)
-            .build();
+        let opts = ClaudeAgentOptions::builder().max_budget_usd(10.5).build();
         let args = opts.to_cli_args("test");
         assert!(args.contains(&"--max-budget-usd".to_string()));
         assert!(args.contains(&"10.5".to_string()));
@@ -1806,19 +1813,12 @@ mod tests {
     // MCP server config tests (bvo, 9be, xik, yhn)
     // =========================================================================
 
-
-
-
-
-
     #[test]
     fn test_to_mcp_config_json_empty() {
         let opts = ClaudeAgentOptions::default();
         let result = opts.to_mcp_config_json().unwrap();
         assert!(result.is_none(), "Empty mcp_servers should produce None");
     }
-
-
 
     #[test]
     fn test_to_cli_args_no_mcp_config_when_empty() {
@@ -1829,9 +1829,6 @@ mod tests {
             "--mcp-config should not be present when mcp_servers is empty"
         );
     }
-
-
-
 
     // HookMatcher tests
     #[test]
@@ -1896,8 +1893,8 @@ mod tests {
 
     #[test]
     fn test_hook_matcher_with_events() {
-        let matcher = HookMatcher::all()
-            .with_events(vec![HookEvent::PreToolUse, HookEvent::PostToolUse]);
+        let matcher =
+            HookMatcher::all().with_events(vec![HookEvent::PreToolUse, HookEvent::PostToolUse]);
 
         assert!(matcher.matches_event(&HookEvent::PreToolUse));
         assert!(matcher.matches_event(&HookEvent::PostToolUse));

@@ -6,15 +6,15 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use tracing::{debug, error, trace, warn};
 
@@ -284,7 +284,7 @@ impl SubprocessCLITransport {
     async fn force_shutdown_by_pid(&self, pid: u32) -> Result<(), ClawError> {
         #[cfg(unix)]
         {
-            use nix::sys::signal::{kill, Signal};
+            use nix::sys::signal::{Signal, kill};
             use nix::unistd::Pid;
 
             let nix_pid = Pid::from_raw(pid as i32);
@@ -416,7 +416,11 @@ impl Transport for SubprocessCLITransport {
 
         // Spawn background tasks
         Self::spawn_reader_task(stdout, tx, self.connected.clone());
-        Self::spawn_stderr_task(stderr, self.stderr_buffer.clone(), self.stderr_callback.clone());
+        Self::spawn_stderr_task(
+            stderr,
+            self.stderr_buffer.clone(),
+            self.stderr_callback.clone(),
+        );
         let _monitor =
             Self::spawn_monitor_task(child, self.connected.clone(), self.stderr_buffer.clone());
 

@@ -44,16 +44,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use rusty_claw::options::{McpServerConfig, McpStdioServerConfig};
     use std::collections::HashMap as EnvMap;
 
-    mcp_servers.insert("filesystem".to_string(), McpServerConfig::Stdio(McpStdioServerConfig {
-        command: "npx".to_string(),
-        args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string(), "/tmp".to_string()],
-        env: EnvMap::new(),
-    }));
-    mcp_servers.insert("database".to_string(), McpServerConfig::Stdio(McpStdioServerConfig {
-        command: "npx".to_string(),
-        args: vec!["-y".to_string(), "@modelcontextprotocol/server-database".to_string()],
-        env: EnvMap::new(),
-    }));
+    mcp_servers.insert(
+        "filesystem".to_string(),
+        McpServerConfig::Stdio(McpStdioServerConfig {
+            command: "npx".to_string(),
+            args: vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp".to_string(),
+            ],
+            env: EnvMap::new(),
+        }),
+    );
+    mcp_servers.insert(
+        "database".to_string(),
+        McpServerConfig::Stdio(McpStdioServerConfig {
+            command: "npx".to_string(),
+            args: vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-database".to_string(),
+            ],
+            env: EnvMap::new(),
+        }),
+    );
 
     let options = ClaudeAgentOptions::builder()
         .max_turns(3)

@@ -177,15 +177,15 @@
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tokio_stream::Stream;
 
-use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
 use crate::control::ControlProtocol;
+use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
 use crate::error::ClawError;
 use crate::messages::Message;
 use crate::options::{ClaudeAgentOptions, PermissionMode};
@@ -415,11 +415,10 @@ impl ClaudeClient {
     pub async fn connect(&mut self) -> Result<(), ClawError> {
         use crate::transport::SubprocessCLITransport;
 
-           // Use pre-injected transport if available; otherwise build a SubprocessCLITransport
-        let mut transport: Box<dyn Transport> =
-            if let Some(pre) = self.pre_transport.take() {
-                pre
-            } else {
+        // Use pre-injected transport if available; otherwise build a SubprocessCLITransport
+        let mut transport: Box<dyn Transport> = if let Some(pre) = self.pre_transport.take() {
+            pre
+        } else {
             // Build CLI args for interactive mode using the shared base arg builder.
             // to_base_cli_args() produces all flags except "-p <prompt>", which is
             // not used in interactive mode — prompts arrive via send_message().
@@ -462,11 +461,7 @@ impl ClaudeClient {
         // a response. The response arrives via the transport's message channel,
         // so we need a reader routing control messages to the ControlProtocol.
         // Without this, initialize() would always timeout.
-        Self::spawn_message_router(
-            message_rx,
-            control.clone(),
-            self.current_turn_tx.clone(),
-        );
+        Self::spawn_message_router(message_rx, control.clone(), self.current_turn_tx.clone());
 
         // Apply pending MCP handler BEFORE initialize.
         // The CLI sends mcp_message requests during init, so the handler
@@ -474,7 +469,11 @@ impl ClaudeClient {
         // Extract pending handler while the lock is held, then drop the lock before any await.
         // Holding a std::sync::MutexGuard across an await point is a clippy error
         // (it would block other threads trying to acquire the lock during the async suspension).
-        let pending_mcp = self.pending_mcp_handler.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let pending_mcp = self
+            .pending_mcp_handler
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(handler) = pending_mcp {
             let mut handlers = control.handlers().await;
             handlers.register_mcp_message(handler);
@@ -1623,10 +1622,10 @@ mod tests {
         use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
         use crate::options::HookEvent;
         use async_trait::async_trait;
-        use serde_json::{json, Value};
+        use serde_json::{Value, json};
 
         #[derive(Debug)]
-    struct TestPermHandler;
+        struct TestPermHandler;
         #[async_trait]
         impl CanUseToolHandler for TestPermHandler {
             async fn can_use_tool(
@@ -1634,7 +1633,9 @@ mod tests {
                 _tool_name: &str,
                 _tool_input: &serde_json::Value,
             ) -> Result<crate::permissions::PermissionDecision, ClawError> {
-                Ok(crate::permissions::PermissionDecision::Allow { updated_input: None })
+                Ok(crate::permissions::PermissionDecision::Allow {
+                    updated_input: None,
+                })
             }
         }
 

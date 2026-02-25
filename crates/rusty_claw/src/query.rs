@@ -35,7 +35,6 @@ use std::task::{Context, Poll};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::{Stream, StreamExt};
 
-
 use crate::error::ClawError;
 use crate::messages::Message;
 use crate::options::ClaudeAgentOptions;
@@ -174,7 +173,6 @@ pub async fn query(
     Ok(QueryStream::new(transport, stream))
 }
 
-
 /// Execute a query that accepts a stream of input messages (multi-message input)
 ///
 /// This function enables advanced agentic patterns where the initial input to Claude
@@ -244,10 +242,8 @@ pub async fn query_with_messages(
     let args = build_stream_args(options.as_ref());
 
     // Create transport with auto-discovery
-    let mut transport = SubprocessCLITransport::new(
-        options.as_ref().and_then(|o| o.cli_path.clone()),
-        args,
-    );
+    let mut transport =
+        SubprocessCLITransport::new(options.as_ref().and_then(|o| o.cli_path.clone()), args);
 
     // Apply working directory if configured
     if let Some(cwd) = options.as_ref().and_then(|o| o.cwd.as_ref()) {

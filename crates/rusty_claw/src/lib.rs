@@ -223,26 +223,26 @@ pub mod prelude {
     //!
     //! Use `use rusty_claw::prelude::*;` to import commonly used types.
 
-    pub use crate::client::{with_client, ClaudeClient, ClaudeSDKClient, ResponseStream};
+    pub use crate::client::{ClaudeClient, ClaudeSDKClient, ResponseStream, with_client};
+    pub use crate::control::ControlProtocol;
     pub use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
     pub use crate::control::messages::{ControlRequest, ControlResponse, IncomingControlRequest};
-    pub use crate::control::ControlProtocol;
     pub use crate::error::ClawError;
     pub use crate::hooks::{
-        HookCallback, HookContext, HookEventInput, HookInput, HookOutput, HookResponse, PermissionDecision,
+        HookCallback, HookContext, HookEventInput, HookInput, HookOutput, HookResponse,
+        PermissionDecision,
     };
     pub use crate::mcp_server::{
-        create_sdk_mcp_server, SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent,
-        ToolHandler, ToolResult, TypedToolHandler,
+        SdkMcpServerImpl, SdkMcpServerRegistry, SdkMcpTool, ToolContent, ToolHandler, ToolResult,
+        TypedToolHandler, create_sdk_mcp_server,
     };
     pub use crate::messages::{
-        ApiMessage, AssistantMessage, AssistantMessageError, ContentBlock, McpServerInfo, Message, ResultMessage,
-        StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
+        ApiMessage, AssistantMessage, AssistantMessageError, ContentBlock, McpServerInfo, Message,
+        ResultMessage, StreamEvent, SystemMessage, ToolInfo, UsageInfo, UserMessage,
     };
     pub use crate::options::{
-        ClaudeAgentOptions, HookEvent, HookMatcher, McpHttpServerConfig,
-        McpSSEServerConfig, McpServerConfig, McpStdioServerConfig, PermissionMode, SdkBeta,
-        SystemPrompt,
+        ClaudeAgentOptions, HookEvent, HookMatcher, McpHttpServerConfig, McpSSEServerConfig,
+        McpServerConfig, McpStdioServerConfig, PermissionMode, SdkBeta, SystemPrompt,
     };
     pub use crate::permissions::DefaultPermissionHandler;
     pub use crate::query::{query, query_with_messages};

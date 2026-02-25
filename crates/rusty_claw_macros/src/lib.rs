@@ -54,8 +54,8 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
-    parse::Parser, parse_macro_input, punctuated::Punctuated, Attribute, Block, Expr, ExprLit,
-    FnArg, Ident, ItemFn, Lit, Meta, Pat, PatType, ReturnType, Token, Type,
+    Attribute, Block, Expr, ExprLit, FnArg, Ident, ItemFn, Lit, Meta, Pat, PatType, ReturnType,
+    Token, Type, parse::Parser, parse_macro_input, punctuated::Punctuated,
 };
 
 /// Arguments parsed from the `#[claw_tool(...)]` attribute
@@ -394,11 +394,7 @@ fn extract_doc_comment(attrs: &[Attribute]) -> Option<String> {
         }
     }
 
-    if doc.is_empty() {
-        None
-    } else {
-        Some(doc)
-    }
+    if doc.is_empty() { None } else { Some(doc) }
 }
 
 /// Validate the function signature

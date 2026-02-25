@@ -95,8 +95,8 @@
 //! ```
 
 use async_trait::async_trait;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -672,7 +672,7 @@ impl SdkMcpServerImpl {
         server
     }
 
-        /// Register a tool with this server
+    /// Register a tool with this server
     ///
     /// # Arguments
     ///
@@ -860,7 +860,7 @@ impl SdkMcpServerImpl {
                     request["id"].clone(),
                     -32602,
                     format!("Tool not found: {}", name),
-                ))
+                ));
             }
         };
 
@@ -1455,15 +1455,18 @@ mod tests {
             count: u32,
         }
 
-        let handler = TypedToolHandler::new(|_input: StrictInput| async move {
-            Ok(ToolResult::text("ok"))
-        });
+        let handler =
+            TypedToolHandler::new(|_input: StrictInput| async move { Ok(ToolResult::text("ok")) });
 
         // "count" is missing → deserialization error
         let result = handler.call(json!({"wrong_field": 1})).await;
         assert!(result.is_err(), "Expected error for bad input");
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Failed to deserialize tool args"), "Error should mention deserialization: {}", err);
+        assert!(
+            err.contains("Failed to deserialize tool args"),
+            "Error should mention deserialization: {}",
+            err
+        );
     }
 
     #[tokio::test]
@@ -1482,7 +1485,10 @@ mod tests {
         });
 
         // With optional field
-        let r1 = handler.call(json!({"required": "hello", "optional": "world"})).await.unwrap();
+        let r1 = handler
+            .call(json!({"required": "hello", "optional": "world"}))
+            .await
+            .unwrap();
         match &r1.content[0] {
             ToolContent::Text { text } => assert_eq!(text, "hello:world"),
             _ => panic!(),

@@ -379,7 +379,9 @@ mod tests {
             _tool_input: &Value,
         ) -> Result<PermissionDecision, ClawError> {
             if tool_name == "Read" {
-                Ok(PermissionDecision::Allow { updated_input: None })
+                Ok(PermissionDecision::Allow {
+                    updated_input: None,
+                })
             } else {
                 Ok(PermissionDecision::Deny { interrupt: false })
             }
@@ -476,7 +478,7 @@ mod tests {
     #[tokio::test]
     async fn test_permission_decision_allow_with_updated_input() {
         #[derive(Debug)]
-    struct SanitizingHandler;
+        struct SanitizingHandler;
 
         #[async_trait]
         impl CanUseToolHandler for SanitizingHandler {
@@ -509,7 +511,7 @@ mod tests {
     #[tokio::test]
     async fn test_permission_decision_deny_with_interrupt() {
         #[derive(Debug)]
-    struct InterruptingHandler;
+        struct InterruptingHandler;
 
         #[async_trait]
         impl CanUseToolHandler for InterruptingHandler {
@@ -523,10 +525,7 @@ mod tests {
         }
 
         let handler = InterruptingHandler;
-        let decision = handler
-            .can_use_tool("Bash", &json!({}))
-            .await
-            .unwrap();
+        let decision = handler.can_use_tool("Bash", &json!({})).await.unwrap();
         match decision {
             PermissionDecision::Deny { interrupt } => {
                 assert!(interrupt);

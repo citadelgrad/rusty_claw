@@ -120,7 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Rewinding to message: {}", checkpoint_message_id);
         match client.rewind_files(&checkpoint_message_id).await {
             Ok(_) => println!("Rewind successful — files restored to checkpoint state."),
-            Err(e) => println!("Rewind failed: {} (this is expected if the CLI doesn't support checkpoints in this mode)", e),
+            Err(e) => println!(
+                "Rewind failed: {} (this is expected if the CLI doesn't support checkpoints in this mode)",
+                e
+            ),
         }
     } else {
         println!("No checkpoint message ID captured — skipping rewind.");

@@ -32,7 +32,9 @@ impl CanUseToolHandler for ReadOnlyPermissionHandler {
         let read_tools = ["Read", "Glob", "Grep", "LSP"];
         if read_tools.contains(&tool_name) {
             println!("  [Permission] ALLOW: {} (read-only tool)", tool_name);
-            return Ok(PermissionDecision::Allow { updated_input: None });
+            return Ok(PermissionDecision::Allow {
+                updated_input: None,
+            });
         }
 
         // Allow Bash only for safe commands
@@ -42,7 +44,9 @@ impl CanUseToolHandler for ReadOnlyPermissionHandler {
             let safe = !cmd.contains("rm ") && !cmd.contains("mv ") && !cmd.contains("> ");
             if safe {
                 println!("  [Permission] ALLOW: Bash (safe command: {})", cmd);
-                return Ok(PermissionDecision::Allow { updated_input: None });
+                return Ok(PermissionDecision::Allow {
+                    updated_input: None,
+                });
             }
             println!("  [Permission] DENY:  Bash (unsafe command: {})", cmd);
             return Ok(PermissionDecision::Deny { interrupt: false });
@@ -76,7 +80,9 @@ impl CanUseToolHandler for SanitizingHandler {
                 updated_input: Some(sanitized),
             });
         }
-        Ok(PermissionDecision::Allow { updated_input: None })
+        Ok(PermissionDecision::Allow {
+            updated_input: None,
+        })
     }
 }
 
@@ -156,7 +162,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "    {} {}\n",
             tool,
-            if result.is_allowed() { "ALLOWED" } else { "DENIED" }
+            if result.is_allowed() {
+                "ALLOWED"
+            } else {
+                "DENIED"
+            }
         );
     }
 
@@ -168,10 +178,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .can_use_tool("Bash", &json!({"command": "run dangerous script"}))
         .await?;
     match &result {
-        PermissionDecision::Allow { updated_input: Some(input) } => {
+        PermissionDecision::Allow {
+            updated_input: Some(input),
+        } => {
             println!("  Sanitized input: {}", input);
         }
-        PermissionDecision::Allow { updated_input: None } => {
+        PermissionDecision::Allow {
+            updated_input: None,
+        } => {
             println!("  Allowed with original input");
         }
         PermissionDecision::Deny { interrupt } => {
@@ -207,6 +221,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Handler registered. After connect(), the CLI will consult");
     println!("the handler for every tool use request.\n");
 
-    println!("Done — demonstrated static lists, DefaultPermissionHandler, custom handler, and input mutation.");
+    println!(
+        "Done — demonstrated static lists, DefaultPermissionHandler, custom handler, and input mutation."
+    );
     Ok(())
 }

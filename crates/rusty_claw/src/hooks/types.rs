@@ -268,18 +268,29 @@ impl HookInput {
 impl From<HookEventInput> for HookInput {
     fn from(typed: HookEventInput) -> Self {
         match typed {
-            HookEventInput::PreToolUse { tool_name, tool_input } => HookInput {
+            HookEventInput::PreToolUse {
+                tool_name,
+                tool_input,
+            } => HookInput {
                 tool_name: Some(tool_name),
                 tool_input: Some(tool_input),
                 ..Default::default()
             },
-            HookEventInput::PostToolUse { tool_name, tool_input, tool_response } => HookInput {
+            HookEventInput::PostToolUse {
+                tool_name,
+                tool_input,
+                tool_response,
+            } => HookInput {
                 tool_name: Some(tool_name),
                 tool_input: Some(tool_input),
                 tool_output: Some(tool_response),
                 ..Default::default()
             },
-            HookEventInput::PostToolUseFailure { tool_name, tool_input, error } => HookInput {
+            HookEventInput::PostToolUseFailure {
+                tool_name,
+                tool_input,
+                error,
+            } => HookInput {
                 tool_name: Some(tool_name),
                 tool_input: Some(tool_input),
                 error: Some(error),
@@ -301,7 +312,11 @@ impl From<HookEventInput> for HookInput {
                 },
                 ..Default::default()
             },
-            HookEventInput::PermissionRequest { tool_name, tool_input, .. } => HookInput {
+            HookEventInput::PermissionRequest {
+                tool_name,
+                tool_input,
+                ..
+            } => HookInput {
                 tool_name: Some(tool_name),
                 tool_input: Some(tool_input),
                 ..Default::default()

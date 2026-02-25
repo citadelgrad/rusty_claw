@@ -47,7 +47,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex, oneshot};
 
 use crate::control::messages::ControlResponse;
 

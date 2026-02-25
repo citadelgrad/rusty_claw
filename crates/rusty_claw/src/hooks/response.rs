@@ -419,8 +419,18 @@ mod tests {
         let response = HookResponse::default();
         let json = serde_json::to_value(&response).unwrap();
 
-        assert!(!json.as_object().unwrap().contains_key("permission_decision"));
-        assert!(!json.as_object().unwrap().contains_key("permission_decision_reason"));
+        assert!(
+            !json
+                .as_object()
+                .unwrap()
+                .contains_key("permission_decision")
+        );
+        assert!(
+            !json
+                .as_object()
+                .unwrap()
+                .contains_key("permission_decision_reason")
+        );
         assert_eq!(json["continue"], true);
         assert!(!json.as_object().unwrap().contains_key("suppress_output"));
     }
@@ -495,16 +505,14 @@ mod tests {
 
     #[test]
     fn test_hook_response_updated_output() {
-        let response = HookResponse::default()
-            .with_updated_output(json!({"result": "sanitized"}));
+        let response = HookResponse::default().with_updated_output(json!({"result": "sanitized"}));
         assert!(response.updated_output.is_some());
         assert_eq!(response.updated_output.unwrap()["result"], "sanitized");
     }
 
     #[test]
     fn test_hook_response_stop_reason() {
-        let response = HookResponse::default()
-            .with_stop_reason("Detected dangerous pattern");
+        let response = HookResponse::default().with_stop_reason("Detected dangerous pattern");
         assert_eq!(
             response.stop_reason,
             Some("Detected dangerous pattern".to_string())
@@ -513,8 +521,7 @@ mod tests {
 
     #[test]
     fn test_hook_response_system_message() {
-        let response = HookResponse::default()
-            .with_system_message("Additional safety context");
+        let response = HookResponse::default().with_system_message("Additional safety context");
         assert_eq!(
             response.system_message,
             Some("Additional safety context".to_string())

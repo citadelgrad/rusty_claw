@@ -565,10 +565,10 @@ mod tests {
     use crate::control::handlers::{CanUseToolHandler, HookHandler, McpMessageHandler};
     use crate::options::HookEvent;
     use async_trait::async_trait;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::sync::Arc;
-    use tokio::sync::mpsc;
     use tokio::sync::Mutex as TokioMutex;
+    use tokio::sync::mpsc;
 
     // Mock transport for testing
     #[allow(clippy::type_complexity)]
@@ -633,7 +633,9 @@ mod tests {
             _tool_input: &Value,
         ) -> Result<crate::permissions::PermissionDecision, ClawError> {
             if tool_name == "Read" {
-                Ok(crate::permissions::PermissionDecision::Allow { updated_input: None })
+                Ok(crate::permissions::PermissionDecision::Allow {
+                    updated_input: None,
+                })
             } else {
                 Ok(crate::permissions::PermissionDecision::Deny { interrupt: false })
             }
@@ -767,10 +769,12 @@ mod tests {
         let options = ClaudeAgentOptions::default();
         let result = control_clone.initialize(&options).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Initialization failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Initialization failed")
+        );
     }
 
     #[tokio::test]
