@@ -1,7 +1,7 @@
 # Rusty Claw
 
 [![Crates.io](https://img.shields.io/crates/v/rusty_claw.svg)](https://crates.io/crates/rusty_claw)
-[![Documentation](https://docs.rs/rusty_claw/badge.svg)](https://docs.rs/rusty_claw)
+[![Documentation](https://img.shields.io/badge/docs-github.io-blue)](https://citadelgrad.github.io/rusty_claw/rusty_claw/index.html)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > Rust implementation of the Claude Agent SDK

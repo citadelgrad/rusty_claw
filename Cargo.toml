@@ -14,7 +14,7 @@ license = "MIT"
 authors = ["rusty_claw contributors"]
 repository = "https://github.com/citadelgrad/rusty_claw"
 homepage = "https://github.com/citadelgrad/rusty_claw"
-documentation = "https://docs.rs/rusty_claw"
+documentation = "https://citadelgrad.github.io/rusty_claw/rusty_claw/index.html"
 
 [workspace.dependencies]
 # Core async runtime
