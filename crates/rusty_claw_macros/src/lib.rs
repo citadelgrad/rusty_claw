@@ -180,7 +180,7 @@ impl FnParam {
     }
 }
 
-/// Check if a type is Option<T>
+/// Check if a type is `Option<T>`
 fn is_option_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
@@ -190,7 +190,7 @@ fn is_option_type(ty: &Type) -> bool {
     false
 }
 
-/// Extract inner type from Option<T>
+/// Extract inner type from `Option<T>`
 fn extract_option_inner(ty: &Type) -> Option<&Type> {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
@@ -203,7 +203,7 @@ fn extract_option_inner(ty: &Type) -> Option<&Type> {
     None
 }
 
-/// Extract inner type from Vec<T>
+/// Extract inner type from `Vec<T>`
 fn extract_vec_inner(ty: &Type) -> Option<&Type> {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
