@@ -1,0 +1,23 @@
+crates/rusty_claw/Cargo.toml
+  2ca3c4ea9f6b8c65 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "b182bf8bf48a19158e4a131da817de8a5b449b49",
+  "prompts": {
+    "2ca3c4ea9f6b8c65": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "995a3cf0-7d39-4574-9b45-89493ecf39b7",
+        "model": "claude-sonnet-4-6"
+      },
+      "human_author": "Scott Nixon <citadelgrad@gmail.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
